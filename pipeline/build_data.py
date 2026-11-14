@@ -43,6 +43,11 @@ BOROS = {"1": "Manhattan", "2": "Bronx", "3": "Brooklyn", "4": "Queens", "5": "S
 # so type is derived from the finished building's unit count, which every job has.
 BUILDING_TYPES = ["Houses (1–2 units)", "Small multifamily (3–9)", "Mid-size apartments (10–49)", "Large apartments (50+)"]
 SIZE_BINS = [-np.inf, 2, 9, 49, np.inf]
+# Permit cohort used to learn typical permit-to-completion times. These years are old enough that
+# 92-97% of their jobs have finished, so the durations aren't biased toward fast jobs.
+TRAIN_YEARS = (2014, 2019)
+MIN_SAMPLE = 20
+HORIZON_MONTHS = 36
 JOB_COLS = ["job_number", "job_type", "units", "size", "bin", "permit", "complete", "nta2020", "source", "lat", "lon", "address"]
 BORO_FROM_NTA = {"MN": "Manhattan", "BX": "Bronx", "BK": "Brooklyn", "QN": "Queens", "SI": "Staten Island"}
 
@@ -186,48 +191,126 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
     return jobs[JOB_COLS]
 
 
-def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
-    """Return {nta: {pj, pu, cj, cu, ij, iu}} arrays aligned to `months`.
+def duration_model(jobs: pd.DataFrame) -> dict[int, np.ndarray]:
+    """Sorted permit-to-completion durations (months) per building type, from the training cohort."""
+    pm = jobs.permit.dt.to_period("M")
+    done = jobs.complete.notna() & pm.notna()
+    dur = (jobs.complete.dt.to_period("M") - pm)[done].map(lambda d: d.n)
+    train = done & jobs.permit.dt.year.between(*TRAIN_YEARS) & (jobs.source == "hdb")
+    dist = {t: np.sort(dur[train & (jobs.btype == t)].to_numpy()) for t in range(len(BUILDING_TYPES))}
+    return {t: d[d >= 0] for t, d in dist.items()}
+
+
+def remaining(dist: np.ndarray, elapsed: int, stale_months: int | None) -> np.ndarray | None:
+    """Durations of comparable jobs that were still open after `elapsed` months, or None if too few.
+
+    Conditioning on "still open" is what keeps an overdue job from being projected into the past.
+    Durations at or past the staleness cutoff mean the job is treated as abandoned, not completed.
+    """
+    cand = dist[dist > elapsed]
+    if len(cand) < MIN_SAMPLE:
+        return None
+    return cand if stale_months is None else np.minimum(cand, stale_months)
+
+
+def estimate_completions(jobs: pd.DataFrame, dist: dict, last_actual: pd.Period, stale_years: int | None) -> pd.DataFrame:
+    """Per open job: a marker month plus the likely range (25th-75th percentile) for its tooltip.
+
+    The marker month is a fixed pseudo-random draw from the job's own conditional distribution
+    (seeded by job number, so it's stable across runs). Drawing instead of using the median keeps
+    marker counts in line with the expected values on the map: a median would pile overdue jobs
+    into the same few months and ignore the chance a job is abandoned. A draw that lands past the
+    staleness cutoff means the job gets no marker completion and leaves "in progress" when stale.
+    """
+    stale_months = 12 * stale_years if stale_years else None
+    pm = jobs.permit.dt.to_period("M")
+    out = pd.DataFrame({"est": pd.Series(pd.NaT, index=jobs.index, dtype="period[M]")})
+    out["est_lo"] = out["est_hi"] = out["est"]
+    open_ = pm.notna() & jobs.complete.isna()
+    for i in jobs.index[open_]:
+        cand = remaining(dist[jobs.btype[i]], (last_actual - pm[i]).n, stale_months)
+        if cand is None:
+            continue
+        finishing = cand if stale_months is None else cand[cand < stale_months]
+        if len(finishing):
+            out.loc[i, "est_lo"] = pm[i] + int(np.percentile(finishing, 25))
+            out.loc[i, "est_hi"] = pm[i] + int(np.percentile(finishing, 75))
+        u = int(hashlib.sha1(str(jobs.job_number[i]).encode()).hexdigest()[:8], 16) / 16**8
+        draw = int(cand[int(u * len(cand))])
+        if stale_months is None or draw < stale_months:
+            out.loc[i, "est"] = pm[i] + draw
+    print(f"  estimated completions: {out.est.notna().sum()} of {open_.sum()} open jobs drew a completion month", file=sys.stderr)
+    return out
+
+
+def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None, dist: dict, last_actual: pd.Period) -> dict:
+    """Return {nta: {pj, pu, cj, cu, xj, xu, ij, iu}} arrays aligned to `months`.
+
+    x = expected completions for jobs still open at `last_actual`: each job spreads its chance of
+    finishing over future months using the durations of comparable jobs that were open as long
+    (`remaining`). After `last_actual`, in progress for those jobs is likewise the expected number
+    still open. Expected values are fractional; they're stored to one decimal.
 
     All-zero arrays are omitted to keep the file small; the front end treats a missing key as zeros.
     """
     n = len(months)
     idx = {p: i for i, p in enumerate(months)}
+    stale_months = 12 * stale_years if stale_years else None
     jobs = jobs[jobs.nta2020.notna()].copy()
     jobs["pm"] = jobs.permit.dt.to_period("M")
     jobs["cm"] = jobs.complete.dt.to_period("M")
+    la = idx.get(last_actual, n - 1)
 
     out: dict[str, dict[str, list]] = {}
     for nta, g in jobs.groupby("nta2020"):
-        s = {k: np.zeros(n) for k in ("pj", "pu", "cj", "cu", "ij", "iu")}
+        s = {k: np.zeros(n) for k in ("pj", "pu", "cj", "cu", "xj", "xu", "ij", "iu")}
         for flow, col in (("p", "pm"), ("c", "cm")):
             sub = g[g[col].notna() & (g[col] >= months[0]) & (g[col] <= months[-1])]
             for m, gg in sub.groupby(col):
                 s[f"{flow}j"][idx[m]] += len(gg)
                 s[f"{flow}u"][idx[m]] += gg.units.sum()
         # In progress at end of month m: permitted on/before m, not yet complete by m.
-        # Difference arrays: +1 at permit month, -1 the month after completion/staleness.
+        # Difference arrays: +1 at permit month, -1 at the exit month (completion or staleness).
         ip = g[g.pm.notna()]
         dj, du = np.zeros(n + 1), np.zeros(n + 1)
-        for pm, cm, u in zip(ip.pm, ip.cm, ip.units):
+        for pm, cm, bt, u in zip(ip.pm, ip.cm, ip.btype, ip.units):
             start = max(pm, months[0])
-            end = cm if pd.notna(cm) else None  # exits in its completion month
-            if stale_years is not None:
-                stale = pm + 12 * stale_years
-                end = stale if end is None or stale < end else end
-            if end is not None and end <= start:
-                continue
             if start > months[-1]:
                 continue
             a = idx[start]
+            cand = None if pd.notna(cm) else remaining(dist[bt], (last_actual - pm).n, stale_months)
+            if cand is not None:
+                # Open at last_actual with a usable model: certain until then, expected after.
+                b = la + 1
+                dj[a] += 1; dj[max(a, b)] -= 1; du[a] += u; du[max(a, b)] -= u
+                offs = pm.ordinal - months[0].ordinal
+                for t in range(max(a, b), n):
+                    k = t - offs  # months since permit
+                    still = (cand > k).mean()
+                    s["ij"][t] += still
+                    s["iu"][t] += still * u
+                    if stale_months is None or k < stale_months:
+                        p_done = (cand == k).mean()
+                        s["xj"][t] += p_done
+                        s["xu"][t] += p_done * u
+                continue
+            end = cm if pd.notna(cm) else None
+            if stale_months is not None:
+                stale = pm + stale_months
+                end = stale if end is None or stale < end else end
+            if end is not None and end <= start:
+                continue
             b = idx[end] if end is not None and end <= months[-1] else n
-            dj[a] += 1
-            dj[b] -= 1
-            du[a] += u
-            du[b] -= u
-        s["ij"] = np.cumsum(dj)[:n]
-        s["iu"] = np.cumsum(du)[:n]
-        arrs = {k: [int(round(x)) for x in v] for k, v in s.items() if v.any()}
+            dj[a] += 1; dj[b] -= 1; du[a] += u; du[b] -= u
+        s["ij"] += np.cumsum(dj)[:n]
+        s["iu"] += np.cumsum(du)[:n]
+        arrs = {}
+        for k, v in s.items():
+            if not v.any():
+                continue
+            frac = k[0] in "xi"
+            arrs[k] = [round(float(x), 1) if frac else int(round(x)) for x in v]
+            arrs[k] = [int(x) if float(x).is_integer() else x for x in arrs[k]]
         if arrs:
             out[nta] = arrs
     return out
@@ -236,7 +319,7 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
 def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
     """One row per job with month indices so the front end can filter by month with no joins.
 
-    Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index, nta]: p = permit month, c = completion
+    Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index, nta, x, x_lo, x_hi]: p = permit month, c = completion
     month, e = month the job leaves "in progress" (completion or staleness), all as offsets from
     months[0], with NEVER meaning never. A job is in progress at t when p <= t < e, matching
     `aggregate`. flags: "a" = alteration, "d" = from DOB NOW.
@@ -250,9 +333,13 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
         c = (r.complete.to_period("M") - m0).n if pd.notna(r.complete) else never
         if p == never and c == never:
             continue  # filed or approved only: never permitted, so never on the map
-        e = c if p == never or stale_years is None else min(c, p + 12 * stale_years)
+        x = (r.est - m0).n if pd.notna(r.est) else never
+        x_lo = (r.est_lo - m0).n if pd.notna(r.est_lo) else never
+        x_hi = (r.est_hi - m0).n if pd.notna(r.est_hi) else never
+        exit_ = c if c != never else x
+        e = exit_ if p == never or stale_years is None else min(exit_, p + 12 * stale_years)
         flags = ("a" if r.job_type == "Alteration" else "") + ("d" if r.source == "dobnow" else "")
-        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype), r.nta2020])
+        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype), r.nta2020, x, x_lo, x_hi])
     # Big projects last so they draw on top of the small ones around them.
     rows.sort(key=lambda row: row[2])
     return {"never": never, "boros": [BORO_FROM_NTA[k] for k in BORO_FROM_NTA], "rows": rows}
@@ -290,9 +377,16 @@ def main() -> None:
     jobs = pd.concat(jobs, ignore_index=True)
     jobs["btype"] = pd.cut(jobs["size"], SIZE_BINS, labels=False).astype(int)
 
-    end = max(jobs.permit.max(), jobs.complete.max()).to_period("M")
+    # Last month with complete completion data: HDB's cutoff month is usually partial (e.g. July 2).
+    last_actual = (hdb.complete.max() + pd.Timedelta(days=1)).to_period("M") - 1
+    dist = duration_model(jobs)
+    medians = {BUILDING_TYPES[t]: int(np.median(d)) for t, d in dist.items() if len(d)}
+    jobs[["est", "est_lo", "est_hi"]] = estimate_completions(jobs, dist, last_actual, args.stale_years or None)
+    data_end = max(jobs.permit.max(), jobs.complete.max()).to_period("M")
+    # Expected completions taper off for years; stop the axis once most projected units are in.
+    end = max(data_end, last_actual + HORIZON_MONTHS)
     months = pd.period_range(START_MONTH, end, freq="M")
-    series = aggregate(jobs, months, args.stale_years or None)
+    series = aggregate(jobs, months, args.stale_years or None, dist, last_actual)
 
     # Borough totals are summed client-side from NTA series, so jobs without an NTA would vanish.
     unplaced = jobs[jobs.nta2020.isna()]
@@ -304,6 +398,10 @@ def main() -> None:
         "provisionalFrom": None if args.no_dob_now else str((hdb_cutoff + pd.Timedelta(days=1)).to_period("M")),
         "includeAlterations": args.include_alterations,
         "staleYears": args.stale_years or None,
+        "dataEnd": str(data_end),
+        "projectedFrom": str(last_actual + 1),
+        "estimateTrainYears": list(TRAIN_YEARS),
+        "estimateMedians": medians,
         "unplacedJobs": int(len(unplaced)),
         "unplacedUnits": int(unplaced.units.sum()),
         "boros": list(BOROS.values()),
