@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { Filters, Measure, Stage } from '@/lib/filters';
 import type { NeighborhoodInfo } from '@/lib/types';
@@ -88,6 +89,7 @@ export function Controls({ filters, boroughs, neighborhoods, shareUrl, onChange,
       <Segmented<Measure> label="Measure" value={filters.measure} options={[['units', 'Units'], ['buildings', 'Buildings']]} onChange={measure => onChange({ measure })} />
       <Segmented<Stage> label="Stage" value={filters.stage} options={[['permitted', 'Permitted'], ['completed', 'Completed'], ['in-progress', 'In progress']]} onChange={stage => onChange({ stage })} />
       <CopyLink shareUrl={shareUrl} />
+      <Link className="share about-link" href="/about">About</Link>
       <label>
         Borough{' '}
         <select value={filters.borough ?? ''} onChange={e => onBorough(e.target.value || null)}>

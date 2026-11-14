@@ -7,7 +7,9 @@ import { BoroughTotals } from './BoroughTotals';
 import { Controls } from './Controls';
 import { MapView } from './MapView';
 import { NeighborhoodPanel } from './NeighborhoodPanel';
-import { Notes } from './Notes';
+import Link from 'next/link';
+import { MadeBy } from './MadeBy';
+import { NeighborhoodRanking } from './NeighborhoodRanking';
 import { TimeBar } from './TimeBar';
 
 // One fetched, consistent view. The map, markers and side panels all render from the same snapshot,
@@ -131,7 +133,11 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
       <aside>
         <BoroughTotals meta={meta} snap={snap} onBorough={b => setBorough(filters.borough === b ? null : b)} />
         <NeighborhoodPanel meta={meta} snap={snap} neighborhoods={neighborhoods} onPickMonth={i => { const L = e - s; setRange(Math.max(0, i - L), Math.max(i, L)); }} />
-        <Notes meta={meta} />
+        <NeighborhoodRanking snap={snap} neighborhoods={neighborhoods} onSelect={nta => update({ selected: nta })} />
+        <footer className="side-foot">
+          <Link href="/about">About the data and methodology →</Link>
+          <MadeBy />
+        </footer>
       </aside>
       <TimeBar meta={meta} filters={filters} s={s} e={e} playing={playing} onRange={setRange} onTogglePlay={togglePlay} />
     </div>
