@@ -5,7 +5,7 @@ import { monthLabel, rangeText } from '@/lib/format';
 import type { Meta } from '@/lib/types';
 import { pastData, projectedIn } from './MapView';
 
-// Two-handle month range slider. In progress is a snapshot at the end month, so the start handle hides.
+// Two-handle month range slider.
 export function TimeBar({ meta, filters: f, s, e, playing, onRange, onTogglePlay }: {
   meta: Meta;
   filters: Filters;
@@ -17,7 +17,6 @@ export function TimeBar({ meta, filters: f, s, e, playing, onRange, onTogglePlay
 }) {
   const N = meta.months.length;
   const pct = (i: number) => (i / (N - 1)) * 100;
-  const snapshot = f.stage === 'in-progress';
   const months = e - s + 1;
   const provisional = f.stage !== 'completed' && !!meta.provisionalFrom && f.to >= meta.provisionalFrom && f.to <= meta.dataEnd;
   const est = projectedIn(meta, f) ? 'Includes estimates' : pastData(meta, f) ? `No permit data after ${monthLabel(meta.dataEnd)}` : null;
@@ -25,16 +24,16 @@ export function TimeBar({ meta, filters: f, s, e, playing, onRange, onTogglePlay
   return (
     <div className="timebar">
       <button className="play" aria-label={playing ? 'Pause' : 'Play'} onClick={onTogglePlay}>{playing ? '❚❚' : '▶'}</button>
-      <span className="range-label">{rangeText(f)}{!snapshot && months > 1 ? ` · ${months} mo` : ''}</span>
+      <span className="range-label">{rangeText(f)}{months > 1 ? ` · ${months} mo` : ''}</span>
       <div className="range">
         <div className="track">
-          <div className="fill" style={{ left: `${pct(snapshot ? e : s)}%`, width: `${snapshot ? 0 : pct(e) - pct(s)}%` }} />
+          <div className="fill" style={{ left: `${pct(s)}%`, width: `${pct(e) - pct(s)}%` }} />
         </div>
         {/* When the handles meet at the right end, the start handle must sit on top or it can't be dragged back. */}
-        <input type="range" min={0} max={N - 1} value={s} disabled={snapshot} aria-label="Start month" style={{ zIndex: s >= N - 2 ? 3 : 1 }}
+        <input type="range" min={0} max={N - 1} value={s} aria-label="Start month" style={{ zIndex: s >= N - 2 ? 3 : 1 }}
           onChange={ev => onRange(Math.min(+ev.target.value, e), e)} />
         <input type="range" min={0} max={N - 1} value={e} aria-label="End month"
-          onChange={ev => onRange(snapshot ? Math.min(s, +ev.target.value) : s, Math.max(+ev.target.value, snapshot ? 0 : s))} />
+          onChange={ev => onRange(s, Math.max(+ev.target.value, s))} />
         <div className="years">
           {meta.months.map((mo, i) => (mo.endsWith('-01') && +mo.slice(0, 4) % 2 === 0 ? <span key={mo} style={{ left: `${pct(i)}%` }}>{mo.slice(0, 4)}</span> : null))}
         </div>

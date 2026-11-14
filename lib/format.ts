@@ -5,12 +5,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 export const monthLabel = (m: string) => `${MONTHS[+m.slice(5) - 1]} ${m.slice(0, 4)}`;
 
-const STAGE_TEXT = { permitted: 'permitted', completed: 'completed', 'in-progress': 'in progress' } as const;
-
-export const whatText = (f: Filters) => `${f.measure} ${STAGE_TEXT[f.stage]}`;
+export const whatText = (f: Filters) => `${f.measure} ${f.stage}`;
 
 export function rangeText(f: Filters): string {
-  if (f.stage === 'in-progress') return `end of ${monthLabel(f.to)}`;
   return f.from === f.to ? monthLabel(f.to) : `${monthLabel(f.from)} – ${monthLabel(f.to)}`;
 }
 

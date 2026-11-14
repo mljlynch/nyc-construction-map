@@ -3,7 +3,7 @@
 // the same thing.
 
 export type Measure = 'units' | 'buildings';
-export type Stage = 'permitted' | 'completed' | 'in-progress';
+export type Stage = 'completed' | 'permitted';
 
 export interface Filters {
   measure: Measure;
@@ -25,10 +25,10 @@ export interface FilterContext {
   defaultTo: string;
 }
 
-export const STAGES: Stage[] = ['permitted', 'completed', 'in-progress'];
+export const STAGES: Stage[] = ['completed', 'permitted'];
 
 export function defaultFilters(ctx: FilterContext): Filters {
-  return { measure: 'units', stage: 'permitted', from: ctx.defaultFrom, to: ctx.defaultTo, borough: null, neighborhoods: [], selected: null };
+  return { measure: 'units', stage: 'completed', from: ctx.defaultFrom, to: ctx.defaultTo, borough: null, neighborhoods: [], selected: null };
 }
 
 type ParamSource = URLSearchParams | Record<string, string | string[] | undefined>;
@@ -75,10 +75,8 @@ export function toSearchParams(f: Filters, ctx: FilterContext, full = false): UR
   const q = new URLSearchParams();
   const rangeChanged = f.from !== ctx.defaultFrom || f.to !== ctx.defaultTo;
   if (full || f.measure !== 'units') q.set('measure', f.measure);
-  if (full || f.stage !== 'permitted') q.set('stage', f.stage);
-  // In progress is a snapshot at the end month, so the start month doesn't apply.
-  if (full ? f.stage !== 'in-progress' : f.stage !== 'in-progress' && rangeChanged) q.set('from', f.from);
-  if (full || f.to !== ctx.defaultTo || (f.stage !== 'in-progress' && rangeChanged)) q.set('to', f.to);
+  if (full || f.stage !== 'completed') q.set('stage', f.stage);
+  if (full || rangeChanged) { q.set('from', f.from); q.set('to', f.to); }
   if (f.borough) q.set('borough', f.borough);
   if (f.neighborhoods.length) q.set('neighborhoods', [...f.neighborhoods].sort().join(','));
   if (f.selected) q.set('selected', f.selected);

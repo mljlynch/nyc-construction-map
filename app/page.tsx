@@ -8,7 +8,7 @@ const JSON_LD = {
   name: 'NYC Housing Map',
   url: 'https://nychousingmap.com/',
   description:
-    'Interactive map of new residential construction in New York City by neighborhood and month: units and buildings permitted, completed and in progress since 2010, with estimated completions through 2029.',
+    'Interactive map of new residential construction in New York City by neighborhood and month: units and buildings completed and permitted since 2010, with estimated completions through 2029.',
   applicationCategory: 'ReferenceApplication',
   operatingSystem: 'Any',
   isAccessibleForFree: true,
@@ -30,8 +30,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       <noscript>
         <p style={{ padding: 16 }}>
-          NYC Housing Map is an interactive map of new residential construction in New York City: units and buildings permitted, completed and under
-          construction in each neighborhood since 2010, with estimated completions through 2029, from NYC Planning&apos;s Housing Database and DOB NOW.
+          NYC Housing Map is an interactive map of new residential construction in New York City: units and buildings completed and permitted in each neighborhood since 2010, with estimated completions through 2029, from NYC Planning&apos;s Housing Database and DOB NOW.
           It needs JavaScript to run.
         </p>
       </noscript>

@@ -22,7 +22,7 @@ function radiusExpr(): ExpressionSpecification {
 
 const classOf = (v: number, breaks: number[]) => (v <= 0 ? 0 : 1 + breaks.filter(b => v >= b).length);
 
-export const projectedIn = (meta: Meta, f: Filters) => f.stage !== 'permitted' && f.to >= meta.projectedFrom;
+export const projectedIn = (meta: Meta, f: Filters) => f.stage === 'completed' && f.to >= meta.projectedFrom;
 export const pastData = (meta: Meta, f: Filters) => f.stage === 'permitted' && f.to > meta.dataEnd;
 
 function Legend({ meta, snap, zoom }: { meta: Meta; snap: Snapshot; zoom: number }) {

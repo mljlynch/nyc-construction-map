@@ -33,8 +33,7 @@ export function NeighborhoodPanel({ meta, snap, neighborhoods, onPickMonth }: { 
   );
 }
 
-// Monthly bars for flows (estimated completions stacked on top, faded), an area for the in-progress
-// snapshot (dashed once it's estimated), with the selected range shaded.
+// Monthly bars (estimated completions stacked on top, faded), with the selected range shaded.
 function TrendChart({ meta, filters: f, actual: s, estimated: sx, onPickMonth }: { meta: Meta; filters: Filters; actual: number[]; estimated: number[]; onPickMonth: (i: number) => void }) {
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null);
   const W = 328, H = 170, m = { l: 36, r: 6, t: 10, b: 20 };
@@ -48,26 +47,12 @@ function TrendChart({ meta, filters: f, actual: s, estimated: sx, onPickMonth }:
   const si = months.indexOf(f.from), ei = months.indexOf(f.to);
   const provIdx = meta.provisionalFrom ? months.indexOf(meta.provisionalFrom) : -1;
   const projIdx = months.indexOf(meta.projectedFrom);
-  const inR = (i: number) => (f.stage === 'in-progress' ? i === ei : i >= si && i <= ei);
+  const inR = (i: number) => i >= si && i <= ei;
   const accent = { fill: 'var(--accent)' };
 
-  let marks;
-  if (f.stage === 'in-progress') {
-    const pt = (i: number) => `${x(i).toFixed(1)},${y(s[i]).toFixed(1)}`;
-    const cut = projIdx > 0 ? projIdx - 1 : n - 1;
-    const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, j) => pt(a + j)).join(' ');
-    marks = (
-      <>
-        <polygon points={`${x(0)},${y(0)} ${range(0, n - 1)} ${x(n - 1)},${y(0)}`} style={accent} opacity={0.18} />
-        <polyline points={range(0, cut)} fill="none" style={{ stroke: 'var(--accent)' }} strokeWidth={2} strokeLinejoin="round" />
-        {projIdx > 0 && <polyline points={range(cut, n - 1)} fill="none" style={{ stroke: 'var(--accent)' }} strokeWidth={2} strokeDasharray="4 3" strokeLinejoin="round" />}
-      </>
-    );
-  } else {
-    const bar = (lo: number, hi: number, i: number, op: number, key: string) =>
-      hi > lo ? <rect key={key} x={x(i) - bw / 2} y={y(hi)} width={bw} height={y(lo) - y(hi)} style={accent} opacity={op * (inR(i) ? 1 : 0.35)} /> : null;
-    marks = s.map((v, i) => [bar(0, v, i, 1, `a${i}`), bar(v, v + sx[i], i, 0.45, `e${i}`)]);
-  }
+  const bar = (lo: number, hi: number, i: number, op: number, key: string) =>
+    hi > lo ? <rect key={key} x={x(i) - bw / 2} y={y(hi)} width={bw} height={y(lo) - y(hi)} style={accent} opacity={op * (inR(i) ? 1 : 0.35)} /> : null;
+  const marks = s.map((v, i) => [bar(0, v, i, 1, `a${i}`), bar(v, v + sx[i], i, 0.45, `e${i}`)]);
 
   const idxAt = (e: React.MouseEvent<SVGRectElement>) => {
     const r = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect();
@@ -75,11 +60,10 @@ function TrendChart({ meta, filters: f, actual: s, estimated: sx, onPickMonth }:
   };
   const hoverNote = (i: number) =>
     f.stage === 'completed' && sx[i] ? `${fmt(s[i])} actual + ${fmt(sx[i])} estimated`
-      : f.stage === 'in-progress' && projIdx > 0 && i >= projIdx ? 'estimated'
       : f.stage === 'permitted' && provIdx >= 0 && i >= provIdx ? 'provisional' : null;
 
   const byYear: Record<string, number> = {};
-  months.forEach((mo, i) => { const yr = mo.slice(0, 4); byYear[yr] = f.stage === 'in-progress' ? tot[i] : (byYear[yr] ?? 0) + tot[i]; });
+  months.forEach((mo, i) => { const yr = mo.slice(0, 4); byYear[yr] = (byYear[yr] ?? 0) + tot[i]; });
 
   return (
     <div className="chart">
@@ -91,15 +75,13 @@ function TrendChart({ meta, filters: f, actual: s, estimated: sx, onPickMonth }:
           </g>
         ))}
         {provIdx >= 0 && f.stage === 'permitted' && <rect x={m.l + provIdx * cw} y={m.t} width={(n - provIdx) * cw} height={ih} style={{ fill: 'var(--provisional)' }} opacity={0.08} />}
-        {f.stage !== 'permitted' && projIdx > 0 && (
+        {f.stage === 'completed' && projIdx > 0 && (
           <>
             <rect x={m.l + projIdx * cw} y={m.t} width={(n - projIdx) * cw} height={ih} style={{ fill: 'var(--text-muted)' }} opacity={0.08} />
             <text x={W - m.r - 2} y={m.t + 10} textAnchor="end" fontSize={9} style={{ fill: 'var(--text-muted)' }}>estimated</text>
           </>
         )}
-        {f.stage === 'in-progress'
-          ? <line x1={x(ei)} x2={x(ei)} y1={m.t} y2={m.t + ih} style={{ stroke: 'var(--text-primary)' }} strokeDasharray="2 2" />
-          : <rect x={m.l + si * cw} y={m.t} width={(ei - si + 1) * cw} height={ih} style={accent} opacity={0.12} />}
+        <rect x={m.l + si * cw} y={m.t} width={(ei - si + 1) * cw} height={ih} style={accent} opacity={0.12} />
         {months.map((mo, i) => (mo.endsWith('-01') && +mo.slice(0, 4) % 4 === 2
           ? <g className="axis" key={mo}><text x={x(i)} y={H - 6} textAnchor="middle">{mo.slice(0, 4)}</text></g> : null))}
         {marks}
@@ -119,7 +101,7 @@ function TrendChart({ meta, filters: f, actual: s, estimated: sx, onPickMonth }:
       <details>
         <summary>Table view</summary>
         <table className="data">
-          <thead><tr><th>Year</th><th>{f.stage === 'in-progress' ? 'Dec snapshot' : 'Total'}</th></tr></thead>
+          <thead><tr><th>Year</th><th>Total</th></tr></thead>
           <tbody>{Object.entries(byYear).map(([yr, v]) => <tr key={yr}><td>{yr}</td><td>{fmt(v)}</td></tr>)}</tbody>
         </table>
       </details>

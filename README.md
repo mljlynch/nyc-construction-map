@@ -7,7 +7,7 @@ Live at **https://nychousingmap.com** (Vercel; every push to `main` deploys).
 ```bash
 uv run pipeline/build_data.py                 # new buildings + DOB NOW freshness layer
 uv run pipeline/build_data.py --include-alterations   # also unit-adding alterations
-uv run pipeline/build_data.py --stale-years 0 # never age out unfinished jobs from "in progress"
+uv run pipeline/build_data.py --stale-years 0 # never treat long-open jobs as abandoned
 uv run pipeline/build_data.py --refresh       # re-download (API responses cache in pipeline/.cache)
 npm install && npm run dev                    # Next.js dev server at http://localhost:3000
 npm run build && npm start                    # production build locally
@@ -49,13 +49,13 @@ A Next.js (App Router) app on Vercel.
 ## Definitions
 
 - **Permitted**: by first permit date. **Completed**: by first certificate of occupancy date.
-- **In progress** at month *m*: permitted on or before *m* and not completed by *m*. Jobs that stay open more than `--stale-years` (default 8) years after their permit are dropped as likely abandoned.
+- The map shows **Completed** (the default) and **Permitted**. The pipeline still writes in-progress counts (`ij`/`iu`: permitted, not yet complete; jobs open more than `--stale-years`, default 8, are treated as abandoned), but the site doesn't show them.
 - **Building type** is set by the finished building's unit count (`classaprop`, or proposed dwelling units for DOB NOW jobs): houses (1–2), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's `bldg_class` and `occ_prop` are blank or "Other" for too many new buildings to use. It appears in project tooltips.
 - The Neighborhoods menu limits the map, markers, totals and chart to the chosen NTAs (combined in the side panel).
-- The time slider selects a start and end month. Permitted and completed show totals over that range, and in progress shows the snapshot at the end month.
+- The time slider selects a start and end month. Both stages show totals over that range. It opens on the last 12 months of actual completions.
 - Withdrawn jobs are excluded. With `--include-alterations`, only alterations that add units count.
 - DOB NOW jobs are deduplicated to one per job number (the part of `job_filing_number` before `-`), using the earliest permit date. They are dropped if HDB already has an NB job on the same BIN, because the two systems use different job numbers.
 - The timeline starts in 2010 because HDB only covers jobs completed in 2010 or later.
 - Months after the HDB permit cutoff are marked provisional for permits.
-- **Estimated completions.** None of the sources have an anticipated completion date, so completions after the last full month of HDB completion data are estimated. Each permitted, unfinished job gets a distribution of finish months from same-type jobs permitted in 2014–2019 (92–97% of which have finished) that were still open at the same age. Map and borough totals use the expected value per month (`xj`/`xu` in `series.json`), and in progress after that month is the expected number still open. Each project marker is placed at a month drawn from its own distribution, seeded by job number, so marker counts track the expected totals; tooltips show the 25th–75th percentile range. Estimates cover only jobs already permitted, so later years undercount what will actually finish. Jobs open longer than nearly all past examples get no estimate. The axis runs 36 months past the last actual completion.
+- **Estimated completions.** None of the sources have an anticipated completion date, so completions after the last full month of HDB completion data are estimated. Each permitted, unfinished job gets a distribution of finish months from same-type jobs permitted in 2014–2019 (92–97% of which have finished) that were still open at the same age. Map and borough totals use the expected value per month (`xj`/`xu` in `series.json`) (in-progress counts after that month are expected values too). Each project marker is placed at a month drawn from its own distribution, seeded by job number, so marker counts track the expected totals; tooltips show the 25th–75th percentile range. Estimates cover only jobs already permitted, so later years undercount what will actually finish. Jobs open longer than nearly all past examples get no estimate. The axis runs 36 months past the last actual completion.
 - Units use fixed color thresholds (1–49, 50–99, 100–149, 150–299, 300–499, 500–999, 1,000+). Building counts use rounded quantile breaks over every window of the selected length.

@@ -6,7 +6,7 @@ import { monthLabel } from '@/lib/format';
 
 export const metadata: Metadata = {
   title: 'About · NYC Housing Map',
-  description: 'Where the NYC Housing Map data comes from, how permits, completions and in-progress construction are counted, and how future completions are estimated.',
+  description: 'Where the NYC Housing Map data comes from, how completions and permits are counted, and how future completions are estimated.',
   alternates: { canonical: '/about' },
 };
 
@@ -26,7 +26,7 @@ export default async function About() {
       <Link className="back" href="/">← Back to the map</Link>
       <h1>About the NYC Housing Map</h1>
       <p>
-        A map of new residential construction in New York City: how many homes were permitted, finished and under construction in each neighborhood,
+        A map of new residential construction in New York City: how many homes were finished and permitted in each neighborhood,
         month by month since 2010, with estimated completions through {monthLabel(meta.months[meta.months.length - 1])}.
       </p>
 
@@ -49,11 +49,7 @@ export default async function About() {
       <ul>
         <li>New buildings{meta.includeAlterations ? ' and alterations that add units' : ''}. Withdrawn jobs are left out.</li>
         <li><strong>Units</strong> are net new homes (Class A units). <strong>Buildings</strong> counts each job once.</li>
-        <li><strong>Permitted</strong> uses the first permit date. <strong>Completed</strong> uses the first certificate of occupancy.</li>
-        <li>
-          <strong>In progress</strong> is a snapshot: projects permitted but not finished at the end of the selected month.
-          {meta.staleYears ? ` Projects still open ${meta.staleYears} years after their permit are treated as abandoned.` : ''}
-        </li>
+        <li><strong>Completed</strong> uses the first certificate of occupancy. <strong>Permitted</strong> uses the first permit date. Both show totals for the months selected on the slider.</li>
         <li>
           <strong>Building type</strong> (in project tooltips) comes from the finished building&apos;s unit count: houses (1–2 units), small multifamily
           (3–9), mid-size apartments (10–49), large apartments (50+). DOB&apos;s own building-class fields are blank or &quot;Other&quot; for too many new
@@ -75,7 +71,7 @@ export default async function About() {
         <li>Map and borough numbers are expected values, so they can be fractional.</li>
         <li>Each unfinished project&apos;s marker sits at a month drawn from its own estimate, so marker counts track the map without matching it exactly. Tooltips show the likely range.</li>
         <li>Estimates only cover projects that already have a permit, so future years undercount what will actually be built.</li>
-        <li>Projects open longer than nearly all past examples get no estimate and stay in progress.</li>
+        <li>Projects open longer than nearly all past examples get no estimate.</li>
       </ul>
 
       <h2>Reading the map</h2>

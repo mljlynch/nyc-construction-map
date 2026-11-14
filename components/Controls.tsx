@@ -87,7 +87,7 @@ export function Controls({ filters, boroughs, neighborhoods, shareUrl, onChange,
     <header>
       <h1>NYC Housing Map</h1>
       <Segmented<Measure> label="Measure" value={filters.measure} options={[['units', 'Units'], ['buildings', 'Buildings']]} onChange={measure => onChange({ measure })} />
-      <Segmented<Stage> label="Stage" value={filters.stage} options={[['permitted', 'Permitted'], ['completed', 'Completed'], ['in-progress', 'In progress']]} onChange={stage => onChange({ stage })} />
+      <Segmented<Stage> label="Stage" value={filters.stage} options={[['completed', 'Completed'], ['permitted', 'Permitted']]} onChange={stage => onChange({ stage })} />
       <CopyLink shareUrl={shareUrl} />
       <Link className="share about-link" href="/about">About</Link>
       <label>

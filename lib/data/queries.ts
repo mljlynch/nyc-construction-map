@@ -56,8 +56,8 @@ async function buildIndex(): Promise<Index> {
     .sort((a, b) => a.boro.localeCompare(b.boro) || a.name.localeCompare(b.name));
   const ntaBoro = Object.fromEntries(neighborhoods.map(n => [n.nta, n.boro]));
 
-  // Open on the last 12 months fully covered by the Housing Database (its cutoff month is partial).
-  const last = meta.months.indexOf(meta.hdbPermitCutoff.slice(0, 7)) - 1;
+  // Open on the last 12 months of actual (not estimated) completions; completed is the default stage.
+  const last = meta.months.indexOf(meta.projectedFrom) - 1;
   const ctx: FilterContext = { months: meta.months, boroughs: meta.boros, ntaBoro, defaultFrom: meta.months[last - 11], defaultTo: meta.months[last] };
 
   const never = raw.never;
@@ -80,7 +80,6 @@ function view(ix: Index, f: Filters) {
   const key = ((f.stage === 'completed' ? 't' : f.stage[0]) + (f.measure === 'units' ? 'u' : 'j')) as Key;
   const valRange = (nta: string, a: number, b: number) => {
     if (!ix.cur[nta]) return 0;
-    if (f.stage === 'in-progress') return ix.cur[nta][key][b];
     return ix.cum[nta][key][b + 1] - ix.cum[nta][key][a];
   };
   const picked = new Set(f.neighborhoods);
@@ -108,11 +107,11 @@ export async function choropleth(f: Filters): Promise<ChoroplethResponse> {
   return { values, breaks: f.measure === 'units' ? UNIT_BREAKS : buildingBreaks(ix, v, f), totals, total: round1(total) };
 }
 
-// Quantiles over every window of the current length (or every month, for the in-progress
-// snapshot), so colors stay comparable as the window slides or plays.
+// Quantiles over every window of the current length, so colors stay comparable as the window
+// slides or plays.
 function buildingBreaks(ix: Index, v: ReturnType<typeof view>, f: Filters): number[] {
   const N = ix.ctx.months.length;
-  const L = f.stage === 'in-progress' ? 1 : v.e - v.s + 1;
+  const L = v.e - v.s + 1;
   const vals: number[] = [];
   for (const nta in ix.cur) if (v.inView(nta)) for (let i = 0; i + L <= N; i++) {
     const x = v.valRange(nta, i, i + L - 1);
@@ -146,9 +145,7 @@ export async function projects(f: Filters): Promise<ProjectsResponse> {
   for (const p of ix.projects) {
     if (f.borough && p.boro !== f.borough) continue;
     if (picked.size && !picked.has(p.nta)) continue;
-    const hit = f.stage === 'permitted' ? within(p.p)
-      : f.stage === 'completed' ? within(p.c) || (p.props.est && within(p.x))
-      : p.p <= e && e < p.e;
+    const hit = f.stage === 'permitted' ? within(p.p) : within(p.c) || (p.props.est && within(p.x));
     if (hit) features.push({ type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] as [number, number] }, properties: p.props });
   }
   return { type: 'FeatureCollection', features };

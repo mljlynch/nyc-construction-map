@@ -51,5 +51,5 @@ export interface SeriesResponse {
   neighborhoods: string[];
   actual: number[]; // per month
   estimated: number[]; // per month; nonzero only for estimated completions
-  total: number; // over the selected range (or the end-month snapshot for in progress)
+  total: number; // over the selected range
 }
