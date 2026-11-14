@@ -130,14 +130,15 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
         filters={filters}
         onSelect={nta => update({ selected: nta })}
       />
+      {/* Sits directly under the map (outside the scrolling side panel) so it's always visible. */}
+      <footer className="map-foot">
+        <Link href="/about">About the data and methodology</Link>
+        <MadeBy />
+      </footer>
       <aside>
         <BoroughTotals meta={meta} snap={snap} onBorough={b => setBorough(filters.borough === b ? null : b)} />
         <NeighborhoodPanel meta={meta} snap={snap} neighborhoods={neighborhoods} onPickMonth={i => { const L = e - s; setRange(Math.max(0, i - L), Math.max(i, L)); }} />
         <NeighborhoodRanking snap={snap} neighborhoods={neighborhoods} onSelect={nta => update({ selected: nta })} />
-        <footer className="side-foot">
-          <Link href="/about">About the data and methodology →</Link>
-          <MadeBy />
-        </footer>
       </aside>
       <TimeBar meta={meta} filters={filters} s={s} e={e} playing={playing} onRange={setRange} onTogglePlay={togglePlay} />
     </div>
