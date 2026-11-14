@@ -39,7 +39,11 @@ CACHE = ROOT / "pipeline" / ".cache"
 # HDB only records completions from 2010 on, so earlier months would be incomplete.
 START_MONTH = pd.Period("2010-01", "M")
 BOROS = {"1": "Manhattan", "2": "Bronx", "3": "Brooklyn", "4": "Queens", "5": "Staten Island"}
-JOB_COLS = ["job_number", "job_type", "units", "bin", "permit", "complete", "nta2020", "source", "lat", "lon", "address"]
+# DOB's building-class and occupancy fields are blank or "Other" for a large share of new buildings,
+# so type is derived from the finished building's unit count, which every job has.
+BUILDING_TYPES = ["Houses (1–2 units)", "Small multifamily (3–9)", "Mid-size apartments (10–49)", "Large apartments (50+)"]
+SIZE_BINS = [-np.inf, 2, 9, 49, np.inf]
+JOB_COLS = ["job_number", "job_type", "units", "size", "bin", "permit", "complete", "nta2020", "source", "lat", "lon", "address"]
 BORO_FROM_NTA = {"MN": "Manhattan", "BX": "Bronx", "BK": "Brooklyn", "QN": "Queens", "SI": "Staten Island"}
 
 
@@ -97,12 +101,13 @@ def load_hdb(include_alterations: bool) -> pd.DataFrame:
     types = ["'New Building'"] + (["'Alteration'"] if include_alterations else [])
     df = soda(
         HDB_ID,
-        select="job_number,job_type,job_status,classanet,boro,bin,datepermit,datecomplt,nta2020,version,"
+        select="job_number,job_type,job_status,classanet,classaprop,boro,bin,datepermit,datecomplt,nta2020,version,"
         "latitude,longitude,addressnum,addressst",
         where=f"job_type in ({','.join(types)}) AND job_status != '9. Withdrawn'",
         order="job_number",
     )
     df["units"] = pd.to_numeric(df["classanet"], errors="coerce").fillna(0)
+    df["size"] = pd.to_numeric(df["classaprop"], errors="coerce").fillna(df.units)
     # Alterations that remove units net out negative; for a construction map we only count additions.
     if include_alterations:
         df = df[(df.job_type == "New Building") | (df.units > 0)]
@@ -131,6 +136,7 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
     filings["units"] = pd.to_numeric(filings.proposed_dwelling_units, errors="coerce").fillna(0) - pd.to_numeric(
         filings.existing_dwelling_units, errors="coerce"
     ).fillna(0)
+    filings["size"] = pd.to_numeric(filings.proposed_dwelling_units, errors="coerce").fillna(0)
 
     # Approved Permits carries the actual issuance date per work permit; take the earliest per job
     # for the window we care about (older jobs already have their first permit in the filings table).
@@ -150,6 +156,7 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
     jobs = filings.groupby("job").agg(
         permit=("permit", "min"),
         units=("units", "last"),
+        size=("size", "last"),
         bin=("bin", "last"),
         lat=("latitude", "last"),
         lon=("longitude", "last"),
@@ -180,7 +187,10 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
 
 
 def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
-    """Return {nta: {pj, pu, cj, cu, ij, iu}} arrays aligned to `months`."""
+    """Return {nta: {building type index: {pj, pu, cj, cu, ij, iu}}} arrays aligned to `months`.
+
+    All-zero arrays are omitted to keep the file small; the front end treats a missing key as zeros.
+    """
     n = len(months)
     idx = {p: i for i, p in enumerate(months)}
     jobs = jobs[jobs.nta2020.notna()].copy()
@@ -188,7 +198,7 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
     jobs["cm"] = jobs.complete.dt.to_period("M")
 
     out: dict[str, dict[str, list]] = {}
-    for nta, g in jobs.groupby("nta2020"):
+    for (nta, btype), g in jobs.groupby(["nta2020", "btype"]):
         s = {k: np.zeros(n) for k in ("pj", "pu", "cj", "cu", "ij", "iu")}
         for flow, col in (("p", "pm"), ("c", "cm")):
             sub = g[g[col].notna() & (g[col] >= months[0]) & (g[col] <= months[-1])]
@@ -217,14 +227,16 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
             du[b] -= u
         s["ij"] = np.cumsum(dj)[:n]
         s["iu"] = np.cumsum(du)[:n]
-        out[nta] = {k: [int(round(x)) for x in v] for k, v in s.items()}
+        arrs = {k: [int(round(x)) for x in v] for k, v in s.items() if v.any()}
+        if arrs:
+            out.setdefault(nta, {})[str(btype)] = arrs
     return out
 
 
 def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
     """One row per job with month indices so the front end can filter by month with no joins.
 
-    Rows are [lon, lat, units, p, c, e, boro, address, flags]: p = permit month, c = completion
+    Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index]: p = permit month, c = completion
     month, e = month the job leaves "in progress" (completion or staleness), all as offsets from
     months[0], with NEVER meaning never. A job is in progress at t when p <= t < e, matching
     `aggregate`. flags: "a" = alteration, "d" = from DOB NOW.
@@ -240,7 +252,7 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
             continue  # filed or approved only: never permitted, so never on the map
         e = c if p == never or stale_years is None else min(c, p + 12 * stale_years)
         flags = ("a" if r.job_type == "Alteration" else "") + ("d" if r.source == "dobnow" else "")
-        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags])
+        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype)])
     # Big projects last so they draw on top of the small ones around them.
     rows.sort(key=lambda row: row[2])
     return {"never": never, "boros": [BORO_FROM_NTA[k] for k in BORO_FROM_NTA], "rows": rows}
@@ -276,6 +288,7 @@ def main() -> None:
         print("Loading DOB NOW freshness layer…", file=sys.stderr)
         jobs.append(load_dob_now(hdb, hdb_cutoff, ntree, ncodes))
     jobs = pd.concat(jobs, ignore_index=True)
+    jobs["btype"] = pd.cut(jobs["size"], SIZE_BINS, labels=False).astype(int)
 
     end = max(jobs.permit.max(), jobs.complete.max()).to_period("M")
     months = pd.period_range(START_MONTH, end, freq="M")
@@ -294,6 +307,7 @@ def main() -> None:
         "unplacedJobs": int(len(unplaced)),
         "unplacedUnits": int(unplaced.units.sum()),
         "boros": list(BOROS.values()),
+        "buildingTypes": BUILDING_TYPES,
     }
 
     (OUT / "ntas.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}, separators=(",", ":")))
@@ -302,7 +316,7 @@ def main() -> None:
     )
     (OUT / "series.json").write_text(json.dumps(series, separators=(",", ":")))
     (OUT / "meta.json").write_text(json.dumps(meta, indent=2))
-    tot = {k: sum(sum(v[k]) for v in series.values()) for k in ("pj", "pu", "cj", "cu")}
+    tot = {k: sum(sum(t.get(k, [])) for v in series.values() for t in v.values()) for k in ("pj", "pu", "cj", "cu")}
     print(f"Wrote {len(series)} NTAs x {len(months)} months. Totals: {tot}. Unplaced jobs: {len(unplaced)}", file=sys.stderr)
 
 

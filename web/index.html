@@ -44,9 +44,21 @@ aside { grid-row: 2 / 4; grid-column: 2; overflow-y: auto; background: var(--sur
 aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 18px 0 8px; font-weight: 600; }
 aside h2:first-child { margin-top: 0; }
 .timebar { grid-column: 1; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface-1); border-top: 1px solid var(--border); }
-.timebar .step { width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 16px; line-height: 1; }
-.timebar .step:disabled { opacity: .35; cursor: not-allowed; }
-.timebar select { font-weight: 600; }
+#rangeLabel { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 170px; }
+.range { position: relative; flex: 1; height: 38px; min-width: 160px; }
+.range .track { position: absolute; left: 8px; right: 8px; top: 11px; height: 4px; border-radius: 2px; background: var(--border); }
+.range .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.range input { position: absolute; left: 0; top: 4px; width: 100%; height: 18px; margin: 0; background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.range input::-webkit-slider-runnable-track { background: transparent; height: 18px; }
+.range input::-moz-range-track { background: transparent; }
+.range input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 16px; height: 16px; margin-top: 1px; border-radius: 50%; background: var(--surface-1); border: 2px solid var(--accent); cursor: grab; }
+.range input::-moz-range-thumb { pointer-events: auto; width: 12px; height: 12px; border-radius: 50%; background: var(--surface-1); border: 2px solid var(--accent); cursor: grab; }
+.range input:disabled::-webkit-slider-thumb { visibility: hidden; }
+.range input:disabled::-moz-range-thumb { visibility: hidden; }
+.range .years { position: absolute; left: 8px; right: 8px; top: 24px; height: 12px; font-size: 10px; color: var(--text-muted); }
+.range .years span { position: absolute; transform: translateX(-50%); }
+.types button { padding: 5px 8px; }
+.types-wrap { display: inline-flex; align-items: center; gap: 6px; }
 #play { width: 34px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 13px; }
 .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--provisional); color: var(--provisional); white-space: nowrap; }
 .legend { position: absolute; left: 12px; bottom: 12px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; z-index: 2; max-width: 300px; }
@@ -54,7 +66,6 @@ aside h2:first-child { margin-top: 0; }
 .legend .lrows { display: grid; gap: 2px; font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .legend .lrow { display: flex; align-items: center; gap: 8px; }
 .legend .lsw { width: 22px; height: 12px; border-radius: 2px; }
-.legend .sw { flex: 1; height: 10px; min-width: 26px; }
 .legend .sizes { display: flex; align-items: flex-end; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted); }
 .legend .sizes div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .legend .dot { border-radius: 50%; background: var(--marker); opacity: .8; border: 1px solid var(--outline); }
@@ -96,9 +107,7 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
     <div class="seg" id="flow" role="group" aria-label="Stage">
       <button data-v="p" aria-pressed="true">Permitted</button><button data-v="c">Completed</button><button data-v="i">In progress</button>
     </div>
-    <div class="seg" id="mode" role="group" aria-label="Time aggregation">
-      <button data-v="single" aria-pressed="true">Single month</button><button data-v="cum">Cumulative</button>
-    </div>
+    <label class="types-wrap">Building type <div class="seg types" id="types" role="group" aria-label="Building type (select one or more)"></div></label>
     <div class="seg" id="scale" role="group" aria-label="Color scale">
       <button data-v="quantile" aria-pressed="true">Quantile</button><button data-v="log">Log</button>
     </div>
@@ -118,10 +127,13 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
   </aside>
   <div class="timebar">
     <button id="play" aria-label="Play">▶</button>
-    <button class="step" id="prev" aria-label="Previous month">‹</button>
-    <select id="selMonth" aria-label="Month"></select>
-    <select id="selYear" aria-label="Year"></select>
-    <button class="step" id="next" aria-label="Next month">›</button>
+    <span id="rangeLabel"></span>
+    <div class="range">
+      <div class="track"><div class="fill" id="fill"></div></div>
+      <input type="range" id="rs" min="0" value="0" aria-label="Start month">
+      <input type="range" id="re" min="0" value="0" aria-label="End month">
+      <div class="years" id="years"></div>
+    </div>
     <span id="prov" class="badge" hidden>Provisional · DOB NOW</span>
   </div>
 </div>
@@ -133,40 +145,64 @@ const FLOW = { p: 'permitted', c: 'completed', i: 'in progress' };
 const METRIC = { u: 'units', j: 'buildings' };
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const mLabel = m => `${MONTHS[+m.slice(5) - 1]} ${m.slice(0, 4)}`;
+const TYPE_SHORT = ['Houses', '3–9 units', '10–49', '50+'];
 
-const state = { markers: 'on', metric: 'u', flow: 'p', mode: 'single', scale: 'quantile', boro: '', t: 0, sel: null, playing: null };
-let meta, series, cum, geo, projects, ntaInfo = {}, breaks = [], map;
+const state = { markers: 'on', metric: 'u', flow: 'p', scale: 'quantile', boro: '', types: [0, 1, 2, 3], s: 0, e: 0, sel: null, playing: null };
+let meta, series, cur, cum, geo, projects, ntaInfo = {}, breaks = [], breaksKey = '', map, N;
 
-function seg(id, key, after) {
+function seg(id, key) {
   $(id).addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     state[key] = b.dataset.v;
     $(id).querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
-    after?.(); refresh(true);
+    refresh();
   });
 }
 
-// Value for one NTA at month index t under the current toggles.
-function val(nta, t) {
-  const k = state.flow + state.metric;
-  if (state.flow === 'i' || state.mode === 'single') return series[nta]?.[k][t] ?? 0;
-  return cum[nta]?.[k][t] ?? 0;
+// Sum the selected building types into one set of monthly arrays per NTA, plus prefix sums
+// (cum[k][i] = total of months < i) so any month range is a single subtraction.
+function buildSeries() {
+  cur = {}; cum = {};
+  for (const nta in series) {
+    cur[nta] = {}; cum[nta] = {};
+    for (const k of ['pj', 'pu', 'cj', 'cu', 'ij', 'iu']) {
+      const a = new Array(N).fill(0);
+      for (const t of state.types) { const src = series[nta][t]?.[k]; if (src) for (let i = 0; i < N; i++) a[i] += src[i]; }
+      cur[nta][k] = a;
+      const c = new Array(N + 1); c[0] = 0; for (let i = 0; i < N; i++) c[i + 1] = c[i] + a[i];
+      cum[nta][k] = c;
+    }
+  }
 }
+
+// Value for one NTA over months s..e: a total for permitted/completed, the end-of-range
+// snapshot for in progress.
+function valRange(nta, s, e) {
+  const k = state.flow + state.metric;
+  if (!cur[nta]) return 0;
+  if (state.flow === 'i') return cur[nta][k][e];
+  return cum[nta][k][e + 1] - cum[nta][k][s];
+}
+const val = nta => valRange(nta, state.s, state.e);
 const inBoro = nta => !state.boro || ntaInfo[nta]?.boro === state.boro;
 
-// Breaks span every month of the current view so colors stay comparable while playing;
-// quantiles of non-zero values keep the 2015/2022 421-a spikes from washing out every other month.
+// Breaks come from every window of the current length (or every month, for the in-progress
+// snapshot), so colors stay comparable as the window slides or plays, and quantiles keep the
+// 2015/2022 421-a spikes from washing out everything else.
 function computeBreaks() {
+  const L = state.flow === 'i' ? 1 : state.e - state.s + 1;
+  const key = [state.flow, state.metric, state.scale, state.boro, state.types.join(), L].join('|');
+  if (key === breaksKey) return;
+  breaksKey = key;
   const vals = [];
-  for (const nta in series) if (inBoro(nta)) for (let t = 0; t < meta.months.length; t++) { const v = val(nta, t); if (v > 0) vals.push(v); }
+  for (const nta in cur) if (inBoro(nta)) for (let i = 0; i + L <= N; i++) { const v = valRange(nta, i, i + L - 1); if (v > 0) vals.push(v); }
   vals.sort((a, b) => a - b);
   const n = 7;
-  if (!vals.length) return [1, 2, 3, 4, 5, 6];
-  if (state.scale === 'log') {
+  if (!vals.length) breaks = [2, 3, 5, 10, 15, 20];
+  else if (state.scale === 'log') {
     const lo = Math.log10(Math.max(1, vals[0])), hi = Math.log10(vals[vals.length - 1]);
-    return niceBreaks(Array.from({ length: n - 1 }, (_, i) => 10 ** (lo + (hi - lo) * (i + 1) / n)));
-  }
-  return niceBreaks(Array.from({ length: n - 1 }, (_, i) => vals[Math.floor(vals.length * (i + 1) / n)]));
+    breaks = niceBreaks(Array.from({ length: n - 1 }, (_, i) => 10 ** (lo + (hi - lo) * (i + 1) / n)));
+  } else breaks = niceBreaks(Array.from({ length: n - 1 }, (_, i) => vals[Math.floor(vals.length * (i + 1) / n)]));
 }
 // Snap raw breaks to round numbers (5, 10, 25, 50, 100, 250…) so the legend reads as clean ranges.
 const NICE = [];
@@ -183,7 +219,7 @@ function niceBreaks(raw) {
 function classOf(v) { if (v <= 0) return 0; let c = 1; for (const b of breaks) if (v >= b) c++; return c; }
 
 function fillExpr() {
-  const c = ['var(--zero)', '--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7'].map((v, i) => i ? css(v) : css('--zero'));
+  const c = ['--zero', '--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7'].map(css);
   return ['match', ['coalesce', ['feature-state', 'c'], 0], 0, c[0], 1, c[1], 2, c[2], 3, c[3], 4, c[4], 5, c[5], 6, c[6], c[7]];
 }
 
@@ -195,22 +231,29 @@ function radiusExpr() {
   return ['interpolate', ['linear'], ['zoom'], 10, at(0.7), 14, at(2.4)];
 }
 
-// Same selection as the choropleth: which jobs count toward the current flow at month t.
+// Same selection as the choropleth.
 function projectFilter() {
-  const t = state.t;
-  const f = state.flow === 'i' ? ['all', ['<=', ['get', 'p'], t], ['<', t, ['get', 'e']]]
-    : ['all', ['>=', ['get', state.flow], state.mode === 'cum' ? 0 : t], ['<=', ['get', state.flow], t]];
+  const { s, e } = state;
+  const f = state.flow === 'i' ? ['all', ['<=', ['get', 'p'], e], ['<', e, ['get', 'e']]]
+    : ['all', ['>=', ['get', state.flow], s], ['<=', ['get', state.flow], e]];
+  f.push(['in', ['get', 'ty'], ['literal', state.types]]);
   if (state.boro) f.push(['==', ['get', 'b'], state.boro]);
   return f;
 }
 
+function rangeText() {
+  const a = meta.months[state.s], b = meta.months[state.e];
+  if (state.flow === 'i') return `end of ${mLabel(b)}`;
+  return state.s === state.e ? mLabel(b) : `${mLabel(a)} – ${mLabel(b)}`;
+}
+const whatText = () => `${METRIC[state.metric]} ${FLOW[state.flow]}`;
+
 function paint() {
   // Controls are live before the basemap style loads; the load handler repaints once sources exist.
   if (!map?.getSource('nta')) return;
-  const t = state.t;
   for (const f of geo.features) {
     const nta = f.properties.nta;
-    map.setFeatureState({ source: 'nta', id: nta }, { c: classOf(val(nta, t)), dim: !inBoro(nta), sel: nta === state.sel });
+    map.setFeatureState({ source: 'nta', id: nta }, { c: classOf(val(nta)), dim: !inBoro(nta), sel: nta === state.sel });
   }
   if (map.getLayer('proj')) {
     map.setFilter('proj', projectFilter());
@@ -225,19 +268,20 @@ function legend() {
     const range = i === lows.length - 1 ? `${fmt(lo)}+` : lo === hi ? fmt(lo) : `${fmt(lo)}–${fmt(hi)}`;
     return `<div class="lrow"><span class="lsw" style="background:${css(v)}"></span>${range}</div>`;
   }).reverse().join('');
-  const what = `${METRIC[state.metric]} ${FLOW[state.flow]}${state.flow === 'i' ? ' (snapshot)' : state.mode === 'cum' ? ' since Jan 2010' : ' in month'}`;
-  $('#legend').innerHTML = `<div class="title">${what[0].toUpperCase() + what.slice(1)} · ${state.scale}</div><div class="lrows">${rows}<div class="lrow"><span class="lsw zero"></span>None</div></div>` +
-    (state.markers === 'on' ? `<div class="sizes"><span>Project units</span>${[10, 100, 500].map(u => { const d = 2 * radiusAt(u, map.getZoom()); return `<div><span class="dot" style="width:${d}px;height:${d}px"></span>${u}</div>`; }).join('')}</div>` : '');
+  const what = whatText();
+  $('#legend').innerHTML = `<div class="title">${what[0].toUpperCase() + what.slice(1)}, ${rangeText()}</div><div class="lrows">${rows}<div class="lrow"><span class="lsw zero"></span>None</div></div>` +
+    (state.markers === 'on' && map ? `<div class="sizes"><span>Project units</span>${[10, 100, 500].map(u => { const d = 2 * radiusAt(u, map.getZoom()); return `<div><span class="dot" style="width:${d}px;height:${d}px"></span>${u}</div>`; }).join('')}</div>` : '');
 }
 
 function boroPanel() {
-  const t = state.t, tot = {};
+  const tot = {};
   for (const b of meta.boros) tot[b] = 0;
-  for (const nta in series) { const b = ntaInfo[nta]?.boro; if (b in tot) tot[b] += val(nta, t); }
+  for (const nta in cur) { const b = ntaInfo[nta]?.boro; if (b in tot) tot[b] += val(nta); }
   const max = Math.max(1, ...Object.values(tot));
   const sum = Object.values(tot).reduce((a, b) => a + b, 0);
-  $('#totalsTitle').textContent = `Borough totals · ${mLabel(meta.months[t])}`;
-  $('#boros').innerHTML = `<div class="muted" style="margin-bottom:6px">${METRIC[state.metric]} ${FLOW[state.flow]}${state.flow === 'i' ? ' at month end' : state.mode === 'cum' ? ', Jan 2010 to date' : ' this month'}</div>` +
+  const typeNote = state.types.length === 4 ? 'all building types' : state.types.map(t => meta.buildingTypes[t].toLowerCase()).join(', ');
+  $('#totalsTitle').textContent = `Borough totals · ${rangeText()}`;
+  $('#boros').innerHTML = `<div class="muted" style="margin-bottom:6px">${whatText()} · ${typeNote}</div>` +
     meta.boros.map(b => `<div class="boro ${state.boro && state.boro !== b ? 'dim' : ''}" data-b="${b}"><span>${b}</span><div class="bar" style="width:${tot[b] / max * 100}%"></div><span class="v">${fmt(tot[b])}</span></div>`).join('') +
     `<div class="total"><span>New York City</span><span>${fmt(sum)}</span></div>`;
 }
@@ -245,47 +289,50 @@ function boroPanel() {
 function nbhdPanel() {
   if (!state.sel) return;
   const nta = state.sel, info = ntaInfo[nta], k = state.flow + state.metric;
-  const s = series[nta]?.[k] ?? meta.months.map(() => 0);
-  $('#nbhdTitle').textContent = 'Neighborhood';
+  const s = cur[nta]?.[k] ?? new Array(N).fill(0);
   $('#nbhd').classList.remove('muted');
   $('#nbhd').innerHTML = `<div style="font-weight:600">${info.name}</div><div class="muted">${info.boro} · ${nta}</div>` +
-    `<div style="margin-top:8px"><span class="hero">${fmt(val(nta, state.t))}</span> <span class="muted">${METRIC[state.metric]} ${FLOW[state.flow]} · ${mLabel(meta.months[state.t])}${state.mode === 'cum' && state.flow !== 'i' ? ' (cumulative)' : ''}</span></div>`;
+    `<div style="margin-top:8px"><span class="hero">${fmt(val(nta))}</span> <span class="muted">${whatText()} · ${rangeText()}</span></div>`;
   drawChart(s);
 }
 
-// Monthly series: bars for flows, an area for the in-progress snapshot. Always per-month
-// (not cumulative) so the spikes the cumulative view smooths over stay visible.
+// Monthly series: bars for flows, an area for the in-progress snapshot, with the selected
+// range shaded.
 function drawChart(s) {
   const W = 328, H = 170, m = { l: 36, r: 6, t: 10, b: 20 };
-  const n = s.length, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const n = s.length, iw = W - m.l - m.r, ih = H - m.t - m.b, cw = iw / n;
   const max = Math.max(1, ...s);
   const nice = (() => { const p = 10 ** Math.floor(Math.log10(max)); for (const f of [1, 2, 2.5, 5, 10]) if (f * p >= max) return f * p; })();
-  const x = i => m.l + (i + .5) * iw / n, y = v => m.t + ih - v / nice * ih, bw = Math.max(1, iw / n - .6);
+  const x = i => m.l + (i + .5) * cw, y = v => m.t + ih - v / nice * ih, bw = Math.max(1, cw - .6);
   const provIdx = meta.provisionalFrom ? meta.months.indexOf(meta.provisionalFrom) : -1;
+  const inR = i => state.flow === 'i' ? i === state.e : i >= state.s && i <= state.e;
   let marks;
   if (state.flow === 'i') {
     const pts = s.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
     marks = `<polygon points="${x(0)},${y(0)} ${pts} ${x(n - 1)},${y(0)}" fill="${css('--accent')}" opacity=".18"/><polyline points="${pts}" fill="none" stroke="${css('--accent')}" stroke-width="2" stroke-linejoin="round"/>`;
   } else {
-    marks = s.map((v, i) => v > 0 ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(2)}" height="${(y(0) - y(v)).toFixed(1)}" fill="${css('--accent')}" opacity="${provIdx >= 0 && i >= provIdx ? .5 : 1}"/>` : '').join('');
+    marks = s.map((v, i) => v > 0 ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(2)}" height="${(y(0) - y(v)).toFixed(1)}" fill="${css('--accent')}" opacity="${inR(i) ? 1 : .35}"/>` : '').join('');
   }
+  const band = state.flow === 'i'
+    ? `<line x1="${x(state.e)}" x2="${x(state.e)}" y1="${m.t}" y2="${m.t + ih}" stroke="${css('--text-primary')}" stroke-dasharray="2 2"/>`
+    : `<rect x="${m.l + state.s * cw}" y="${m.t}" width="${(state.e - state.s + 1) * cw}" height="${ih}" fill="${css('--accent')}" opacity=".12"/>`;
   const yt = [0, nice / 2, nice].map(v => `<g class="grid"><line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/></g><g class="axis"><text x="${m.l - 4}" y="${y(v) + 3}" text-anchor="end">${v >= 1000 ? v / 1000 + 'k' : v}</text></g>`).join('');
   const xt = meta.months.map((mo, i) => mo.endsWith('-01') && +mo.slice(0, 4) % 4 === 2 ? `<g class="axis"><text x="${x(i)}" y="${H - 6}" text-anchor="middle">${mo.slice(0, 4)}</text></g>` : '').join('');
-  const prov = provIdx >= 0 ? `<rect x="${x(provIdx) - iw / n / 2}" y="${m.t}" width="${W - m.r - x(provIdx) + iw / n / 2}" height="${ih}" fill="${css('--provisional')}" opacity=".08"/>` : '';
-  $('#chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly ${METRIC[state.metric]} ${FLOW[state.flow]}">${yt}${prov}${xt}${marks}
-    <line id="cur" x1="${x(state.t)}" x2="${x(state.t)}" y1="${m.t}" y2="${m.t + ih}" stroke="${css('--text-primary')}" stroke-width="1" stroke-dasharray="2 2"/>
+  const prov = provIdx >= 0 ? `<rect x="${m.l + provIdx * cw}" y="${m.t}" width="${(n - provIdx) * cw}" height="${ih}" fill="${css('--provisional')}" opacity=".08"/>` : '';
+  $('#chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly ${whatText()}">${yt}${prov}${band}${xt}${marks}
     <line id="hov" y1="${m.t}" y2="${m.t + ih}" stroke="${css('--text-muted')}" stroke-width="1" visibility="hidden"/>
-    <rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg>
+    <rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent" style="cursor:pointer"/></svg>
     <details><summary>Table view</summary><table class="data"><tr><th>Year</th><th>${state.flow === 'i' ? 'Dec snapshot' : 'Total'}</th></tr>${yearRows(s)}</table></details>`;
   const svg = $('#chart svg'), hit = $('#hit'), tip = $('#tip');
+  const idxAt = e => { const r = svg.getBoundingClientRect(); return Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) * W / r.width - m.l) / cw))); };
   hit.addEventListener('mousemove', e => {
-    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width;
-    const i = Math.max(0, Math.min(n - 1, Math.floor((px - m.l) / iw * n)));
+    const i = idxAt(e);
     $('#hov').setAttribute('x1', x(i)); $('#hov').setAttribute('x2', x(i)); $('#hov').setAttribute('visibility', 'visible');
-    showTip(e, `${mLabel(meta.months[i])}<br><b>${fmt(s[i])}</b> ${METRIC[state.metric]} ${FLOW[state.flow]}${provIdx >= 0 && i >= provIdx ? '<br><span class="muted">provisional</span>' : ''}`);
+    showTip(e, `${mLabel(meta.months[i])}<br><b>${fmt(s[i])}</b> ${whatText()}${provIdx >= 0 && i >= provIdx ? '<br><span class="muted">provisional</span>' : ''}`);
   });
   hit.addEventListener('mouseleave', () => { $('#hov').setAttribute('visibility', 'hidden'); tip.style.display = 'none'; });
-  hit.addEventListener('click', e => { const r = svg.getBoundingClientRect(); setT(Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) * W / r.width - m.l) / iw * n)))); });
+  // Clicking the chart moves the window to end at that month, keeping its length.
+  hit.addEventListener('click', e => { const i = idxAt(e), L = state.e - state.s; setRange(Math.max(0, i - L), Math.max(i, L)); });
 }
 function yearRows(s) {
   const by = {};
@@ -294,38 +341,42 @@ function yearRows(s) {
 }
 
 function showTip(e, html) {
-  const tip = $('#tip'), host = $('#map').getBoundingClientRect();
-  tip.innerHTML = html; tip.style.display = 'block';
-  tip.style.position = 'fixed';
-  const w = tip.offsetWidth;
-  tip.style.left = Math.min(window.innerWidth - w - 8, e.clientX + 12) + 'px';
+  const tip = $('#tip');
+  tip.innerHTML = html; tip.style.display = 'block'; tip.style.position = 'fixed';
+  tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, e.clientX + 12) + 'px';
   tip.style.top = (e.clientY + 12) + 'px';
 }
 
-function setT(t) {
-  state.t = t;
-  const mo = meta.months[t];
-  $('#selYear').value = mo.slice(0, 4);
-  // Only offer months that exist in the selected year (the first and last years are partial).
-  const have = new Set(meta.months.filter(m => m.startsWith(mo.slice(0, 4))).map(m => +m.slice(5)));
-  $('#selMonth').querySelectorAll('option').forEach(o => o.disabled = !have.has(+o.value));
-  $('#selMonth').value = +mo.slice(5);
-  $('#prev').disabled = t === 0; $('#next').disabled = t === meta.months.length - 1;
-  $('#prov').hidden = !(meta.provisionalFrom && mo >= meta.provisionalFrom);
+function setRange(s, e) {
+  s = Math.max(0, Math.min(N - 1, s)); e = Math.max(0, Math.min(N - 1, e));
+  if (s > e) [s, e] = [e, s];
+  state.s = s; state.e = e;
+  $('#rs').value = s; $('#re').value = e;
+  const pct = i => i / (N - 1) * 100;
+  $('#fill').style.left = (state.flow === 'i' ? pct(e) : pct(s)) + '%';
+  $('#fill').style.width = (state.flow === 'i' ? 0 : pct(e) - pct(s)) + '%';
+  // When the handles meet at the right end, the start handle must sit on top or it can't be dragged back.
+  $('#rs').style.zIndex = s >= N - 2 ? 3 : 1;
+  const months = e - s + 1;
+  $('#rangeLabel').textContent = rangeText() + (state.flow !== 'i' && months > 1 ? ` · ${months} mo` : '');
+  $('#prov').hidden = !(meta.provisionalFrom && meta.months[e] >= meta.provisionalFrom);
+  computeBreaks(); legend(); // the legend title carries the range, so redraw it every time
   paint(); boroPanel(); nbhdPanel();
 }
 
-function refresh(rebreak) {
-  $('#mode').querySelectorAll('button').forEach(b => b.disabled = state.flow === 'i' && b.dataset.v === 'cum');
-  if (rebreak) { breaks = computeBreaks(); legend(); }
-  setT(state.t);
+function refresh() {
+  $('#rs').disabled = state.flow === 'i';
+  breaksKey = '';
+  setRange(state.s, state.e);
 }
 
 function play() {
   if (state.playing) { clearInterval(state.playing); state.playing = null; $('#play').textContent = '▶'; $('#play').setAttribute('aria-label', 'Play'); return; }
-  if (state.t >= meta.months.length - 1) setT(0);
+  const L = state.e - state.s;
+  if (state.e >= N - 1) setRange(0, L);
   $('#play').textContent = '❚❚'; $('#play').setAttribute('aria-label', 'Pause');
-  state.playing = setInterval(() => { if (state.t >= meta.months.length - 1) return play(); setT(state.t + 1); }, 140);
+  // Slides the whole window forward one month at a time.
+  state.playing = setInterval(() => { if (state.e >= N - 1) return play(); setRange(state.s + 1, state.e + 1); }, 140);
 }
 
 function fitBoro() {
@@ -337,21 +388,25 @@ function fitBoro() {
 
 async function main() {
   [meta, series, geo, projects] = await Promise.all(['data/meta.json', 'data/series.json', 'data/ntas.geojson', 'data/projects.json'].map(u => fetch(u).then(r => r.json())));
+  N = meta.months.length;
   for (const f of geo.features) ntaInfo[f.properties.nta] = f.properties;
-  const projGeo = { type: 'FeatureCollection', features: projects.rows.map(([lon, lat, u, p, c, e, b, a, fl]) => ({
+  const projGeo = { type: 'FeatureCollection', features: projects.rows.map(([lon, lat, u, p, c, e, b, a, fl, ty]) => ({
     type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] },
-    properties: { u, p, c, e, b: projects.boros[b], a, alt: fl.includes('a'), dob: fl.includes('d') } })) };
-  cum = {};
-  for (const nta in series) { cum[nta] = {}; for (const k in series[nta]) { let a = 0; cum[nta][k] = series[nta][k].map(v => a += v); } }
+    properties: { u, p, c, e, ty, b: projects.boros[b], a, alt: fl.includes('a'), dob: fl.includes('d') } })) };
+  buildSeries();
+
   meta.boros.forEach(b => $('#boro').insertAdjacentHTML('beforeend', `<option>${b}</option>`));
-  MONTHS.forEach((m, i) => $('#selMonth').insertAdjacentHTML('beforeend', `<option value="${i + 1}">${m}</option>`));
-  [...new Set(meta.months.map(m => m.slice(0, 4)))].forEach(y => $('#selYear').insertAdjacentHTML('beforeend', `<option>${y}</option>`));
-  // Open on the last month fully covered by the Housing Database (its cutoff month is partial).
-  state.t = meta.hdbPermitCutoff ? meta.months.indexOf(meta.hdbPermitCutoff.slice(0, 7)) - 1 : meta.months.length - 1;
+  $('#types').innerHTML = meta.buildingTypes.map((t, i) => `<button data-t="${i}" aria-pressed="true" title="${t}">${TYPE_SHORT[i]}</button>`).join('');
+  $('#rs').max = $('#re').max = N - 1;
+  $('#years').innerHTML = meta.months.map((mo, i) => mo.endsWith('-01') && +mo.slice(0, 4) % 2 === 0 ? `<span style="left:${i / (N - 1) * 100}%">${mo.slice(0, 4)}</span>` : '').join('');
+  // Open on the last 12 months fully covered by the Housing Database (its cutoff month is partial).
+  const last = meta.hdbPermitCutoff ? meta.months.indexOf(meta.hdbPermitCutoff.slice(0, 7)) - 1 : N - 1;
+  state.s = last - 11; state.e = last;
   $('#notes').innerHTML = `<p>Source: NYC DCP Housing Database ${meta.hdbVersion} (new buildings${meta.includeAlterations ? ' and unit-adding alterations' : ''}; withdrawn jobs excluded). Units are net new Class A units. Permitted by first permit date, completed by first certificate of occupancy.</p>` +
+    `<p>Building type is set by the finished building's unit count: houses (1–2 units), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's own building-class fields are blank or "Other" for too many new buildings to use.</p>` +
     (meta.provisionalFrom ? `<p>From ${mLabel(meta.provisionalFrom)} on, permits come from DOB NOW new-building filings not yet in the Housing Database (one record per job, earliest permit). Completions stop at ${meta.hdbCompleteCutoff}, so in-progress counts after that date run high.</p>` : '') +
-    (meta.staleYears ? `<p>"In progress" = permitted and not yet complete at month end; jobs still open ${meta.staleYears} years after their permit are treated as abandoned.</p>` : '') +
-    `<p>The 2015 and 2022 spikes are filings rushed in before the 421-a tax break expired. Colors use breaks over every month in view so playback stays comparable.</p>`;
+    (meta.staleYears ? `<p>"In progress" = permitted and not yet complete at the end of the range; jobs still open ${meta.staleYears} years after their permit are treated as abandoned.</p>` : '') +
+    `<p>The 2015 and 2022 spikes are filings rushed in before the 421-a tax break expired. Color breaks are computed over every window of the selected length, so sliding or playing the window stays comparable.</p>`;
 
   map = new maplibregl.Map({
     container: 'map',
@@ -373,39 +428,44 @@ async function main() {
     const NEVER = projects.never, when = i => i >= 0 && i < NEVER ? mLabel(meta.months[i]) : i < 0 ? 'before 2010' : null;
     // One handler so a project under the cursor wins over the neighborhood beneath it.
     map.on('mousemove', e => {
-      const hit = map.queryRenderedFeatures(e.point, { layers: map.getLayer('proj') && state.markers === 'on' ? ['proj', 'nta-fill'] : ['nta-fill'] });
+      const hit = map.queryRenderedFeatures(e.point, { layers: state.markers === 'on' ? ['proj', 'nta-fill'] : ['nta-fill'] });
       const pr = hit.find(f => f.layer.id === 'proj'), n = hit.find(f => f.layer.id === 'nta-fill');
       map.getCanvas().style.cursor = pr || n ? 'pointer' : '';
       if (pr) {
         const p = pr.properties;
         showTip(e.originalEvent, `<div style="font-weight:600">${p.a || 'Address unknown'}</div><b>${fmt(p.u)}</b> units · ${p.alt ? 'alteration' : 'new building'}` +
-          `<br><span class="muted">Permitted ${when(p.p) ?? '—'}${when(p.c) ? ` · completed ${when(p.c)}` : ''}${p.dob ? '<br>DOB NOW filing (provisional)' : ''}</span>`);
+          `<br><span class="muted">${meta.buildingTypes[p.ty]}<br>Permitted ${when(p.p) ?? '—'}${when(p.c) ? ` · completed ${when(p.c)}` : ''}${p.dob ? '<br>DOB NOW filing (provisional)' : ''}</span>`);
       } else if (n) {
         const p = n.properties;
-        showTip(e.originalEvent, `<div style="font-weight:600">${p.name}</div><span class="muted">${p.boro}</span><br><b>${fmt(val(p.nta, state.t))}</b> ${METRIC[state.metric]} ${FLOW[state.flow]}`);
+        showTip(e.originalEvent, `<div style="font-weight:600">${p.name}</div><span class="muted">${p.boro}</span><br><b>${fmt(val(p.nta))}</b> ${whatText()}`);
       } else $('#tip').style.display = 'none';
     });
     map.on('mouseout', () => { $('#tip').style.display = 'none'; });
     map.on('zoomend', legend);
     map.on('click', 'nta-fill', e => { state.sel = e.features[0].properties.nta; paint(); nbhdPanel(); });
-    refresh(true);
+    refresh();
   });
 
-  seg('#metric', 'metric'); seg('#flow', 'flow', () => { if (state.flow === 'i' && state.mode === 'cum') { state.mode = 'single'; $('#mode').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === 'single')); } });
-  seg('#mode', 'mode'); seg('#scale', 'scale'); seg('#markers', 'markers');
-  $('#boro').addEventListener('change', e => { state.boro = e.target.value; fitBoro(); refresh(true); });
-  $('#boros').addEventListener('click', e => { const b = e.target.closest('.boro'); if (!b) return; state.boro = state.boro === b.dataset.b ? '' : b.dataset.b; $('#boro').value = state.boro; fitBoro(); refresh(true); });
-  const pick = () => {
-    const y = $('#selYear').value, ym = meta.months.filter(m => m.startsWith(y));
-    const want = `${y}-${String($('#selMonth').value).padStart(2, '0')}`;
-    // Switching year onto a month that year lacks lands on that year's nearest month.
-    setT(meta.months.indexOf(meta.months.includes(want) ? want : want < ym[0] ? ym[0] : ym[ym.length - 1]));
-  };
-  $('#selMonth').addEventListener('change', pick); $('#selYear').addEventListener('change', pick);
-  $('#prev').addEventListener('click', () => setT(Math.max(0, state.t - 1)));
-  $('#next').addEventListener('click', () => setT(Math.min(meta.months.length - 1, state.t + 1)));
+  seg('#metric', 'metric'); seg('#flow', 'flow'); seg('#scale', 'scale'); seg('#markers', 'markers');
+  $('#types').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const t = +b.dataset.t, on = state.types.includes(t);
+    if (on && state.types.length === 1) return; // keep at least one type selected
+    state.types = on ? state.types.filter(x => x !== t) : [...state.types, t].sort();
+    b.setAttribute('aria-pressed', !on);
+    buildSeries(); refresh();
+  });
+  $('#boro').addEventListener('change', e => { state.boro = e.target.value; fitBoro(); refresh(); });
+  $('#boros').addEventListener('click', e => { const b = e.target.closest('.boro'); if (!b) return; state.boro = state.boro === b.dataset.b ? '' : b.dataset.b; $('#boro').value = state.boro; fitBoro(); refresh(); });
+  $('#rs').addEventListener('input', e => setRange(Math.min(+e.target.value, state.e), state.e));
+  $('#re').addEventListener('input', e => setRange(state.s, Math.max(+e.target.value, state.flow === 'i' ? 0 : state.s)));
   $('#play').addEventListener('click', play);
-  document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; if (e.key === ' ') { e.preventDefault(); play(); } if (e.key === 'ArrowRight') setT(Math.min(meta.months.length - 1, state.t + 1)); if (e.key === 'ArrowLeft') setT(Math.max(0, state.t - 1)); });
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === ' ') { e.preventDefault(); play(); }
+    if (e.key === 'ArrowRight' && state.e < N - 1) setRange(state.s + 1, state.e + 1);
+    if (e.key === 'ArrowLeft' && state.s > 0) setRange(state.s - 1, state.e - 1);
+  });
 }
 main();
 </script>

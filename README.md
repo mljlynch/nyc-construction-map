@@ -27,6 +27,8 @@ python3 -m http.server 8765 --directory web   # then open http://localhost:8765
 
 - **Permitted**: by first permit date. **Completed**: by first certificate of occupancy date.
 - **In progress** at month *m*: permitted on or before *m* and not completed by *m*. Jobs that stay open more than `--stale-years` (default 8) years after their permit are dropped as likely abandoned.
+- **Building type** is set by the finished building's unit count (`classaprop`, or proposed dwelling units for DOB NOW jobs): houses (1–2), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's `bldg_class` and `occ_prop` are blank or "Other" for too many new buildings to use. `series.json` is keyed NTA → type → measure, and the page sums whichever types are selected.
+- The time slider selects a start and end month. Permitted and completed show totals over that range, and in progress shows the snapshot at the end month.
 - Withdrawn jobs are excluded. With `--include-alterations`, only alterations that add units count.
 - DOB NOW jobs are deduplicated to one per job number (the part of `job_filing_number` before `-`), using the earliest permit date. They are dropped if HDB already has an NB job on the same BIN, because the two systems use different job numbers.
 - The timeline starts in 2010 because HDB only covers jobs completed in 2010 or later.

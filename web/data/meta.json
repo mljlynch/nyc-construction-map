@@ -218,5 +218,11 @@
     "Brooklyn",
     "Queens",
     "Staten Island"
+  ],
+  "buildingTypes": [
+    "Houses (1\u20132 units)",
+    "Small multifamily (3\u20139)",
+    "Mid-size apartments (10\u201349)",
+    "Large apartments (50+)"
   ]
 }
