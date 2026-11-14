@@ -2,7 +2,7 @@
 // API route read and write them through this module, so a shared link and an API call always mean
 // the same thing.
 
-export type Measure = 'units' | 'buildings';
+export type Measure = 'units' | 'affordable' | 'buildings';
 export type Stage = 'completed' | 'permitted';
 export type BuildType = 'new' | 'all'; // new buildings only, or also alterations that add units
 
@@ -47,7 +47,8 @@ function getter(src: ParamSource) {
 export function parseFilters(src: ParamSource, ctx: FilterContext): Filters {
   const get = getter(src);
   const f = defaultFilters(ctx);
-  if (get('measure') === 'buildings') f.measure = 'buildings';
+  const measure = get('measure');
+  if (measure === 'buildings' || measure === 'affordable') f.measure = measure;
   if (get('type') === 'all') f.type = 'all';
   const stage = get('stage');
   if (stage && (STAGES as string[]).includes(stage)) f.stage = stage as Stage;

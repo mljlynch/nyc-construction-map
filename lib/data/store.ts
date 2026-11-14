@@ -3,12 +3,12 @@ import path from 'node:path';
 import type { Meta } from '../types';
 
 // Raw shapes of the pipeline's output (pipeline/build_data.py documents each field).
-export type SeriesKey = 'pj' | 'pu' | 'cj' | 'cu' | 'xj' | 'xu' | 'ij' | 'iu';
+export type SeriesKey = `${'p' | 'c' | 'x' | 'i'}${'j' | 'u' | 'a'}`; // stage + measure (jobs, units, affordable units)
 export type Kind = 'n' | 'a'; // new building, alteration that adds units
 export type RawSeries = Record<string, Partial<Record<Kind, Partial<Record<SeriesKey, number[]>>>>>;
 export type FeatureCollection = { type: 'FeatureCollection'; features: { type: 'Feature'; properties: Record<string, unknown>; geometry: unknown }[] };
-// [lon, lat, units, p, c, e, boro, address, flags, type, nta, x, x_lo, x_hi]
-export type RawProjectRow = [number, number, number, number, number, number, number, string, string, number, string, number, number, number];
+// [lon, lat, units, p, c, e, boro, address, flags, type, nta, x, x_lo, x_hi, affordable units]
+export type RawProjectRow = [number, number, number, number, number, number, number, string, string, number, string, number, number, number, number];
 export type RawProjects = { never: number; boros: string[]; rows: RawProjectRow[] };
 
 /**

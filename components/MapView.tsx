@@ -15,8 +15,9 @@ const css = (v: string) => getComputedStyle(document.documentElement).getPropert
 const R_SCALE = 0.36;
 const radiusAt = (units: number, zoom: number) =>
   Math.max(2, R_SCALE * Math.sqrt(Math.max(units, 1)) * (zoom >= 14 ? 2.4 : zoom <= 10 ? 0.7 : 0.7 + (zoom - 10) * 0.425));
-function radiusExpr(): ExpressionSpecification {
-  const at = (k: number): ExpressionSpecification => ['max', 2, ['*', R_SCALE * k, ['sqrt', ['max', ['get', 'u'], 1]]]];
+// Sized by total units, or by affordable units in the affordable view.
+function radiusExpr(field: 'u' | 'aff' = 'u'): ExpressionSpecification {
+  const at = (k: number): ExpressionSpecification => ['max', 2, ['*', R_SCALE * k, ['sqrt', ['max', ['get', field], 1]]]];
   return ['interpolate', ['linear'], ['zoom'], 10, at(0.7), 14, at(2.4)];
 }
 
@@ -41,7 +42,7 @@ function Legend({ meta, snap, zoom }: { meta: Meta; snap: Snapshot; zoom: number
       </div>
       {projectedIn(meta, f) && <div className="lnote">Includes estimated completions{f.stage === 'completed' ? '; faded markers are estimates' : ''}</div>}
       <div className="sizes">
-        <span>Project units</span>
+        <span>{f.measure === 'affordable' ? 'Affordable units' : 'Project units'}</span>
         {[10, 100, 500].map(u => { const d = 2 * radiusAt(u, zoom); return <div key={u}><span className="dot" style={{ width: d, height: d }} />{u}</div>; })}
       </div>
     </div>
@@ -124,7 +125,7 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
         setTip({ x, y, body: (
           <>
             <div style={{ fontWeight: 600 }}>{p.a || 'Address unknown'}</div>
-            <b>{fmt(p.u)}</b> units · {p.alt ? 'alteration' : 'new building'}
+            <b>{fmt(p.u)}</b> units{p.aff > 0 && <> · <b>{fmt(p.aff)}</b> affordable</>} · {p.alt ? 'alteration' : 'new building'}
             <br /><span className="muted">
               {meta.buildingTypes[p.ty]}
               <br />Permitted {when(p.p) ?? '—'}{p.c != null && ` · completed ${when(p.c)}`}
@@ -166,6 +167,7 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
       const f = snap.filters;
       const picked = new Set(f.neighborhoods);
       map.setPaintProperty('proj', 'circle-opacity', f.stage === 'completed' ? ['case', ['get', 'est'], 0.3, 0.75] : 0.7);
+      map.setPaintProperty('proj', 'circle-radius', radiusExpr(f.measure === 'affordable' ? 'aff' : 'u'));
       for (const feat of geo.features) {
         const nta = feat.properties!.nta as string;
         const inView = (!f.borough || ctx.ntaBoro[nta] === f.borough) && (!picked.size || picked.has(nta));

@@ -31,6 +31,7 @@ export interface ChoroplethResponse {
 
 export interface ProjectProps {
   u: number; // units
+  aff: number; // affordable units (HPD)
   ty: number; // building type index into meta.buildingTypes
   a: string; // address
   alt: boolean; // alteration rather than new building

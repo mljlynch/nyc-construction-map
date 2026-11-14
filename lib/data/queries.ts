@@ -6,11 +6,13 @@ import { getStore, type Kind, type RawSeries, type SeriesKey } from './store';
 // each becomes a query (a GROUP BY over monthly counts, a filtered SELECT of projects), and the
 // response shapes stay the same.
 
-type Key = SeriesKey | 'tj' | 'tu'; // t = completed including estimates (actual c + expected x)
-const KEYS: Key[] = ['pj', 'pu', 'cj', 'cu', 'xj', 'xu', 'tj', 'tu', 'ij', 'iu'];
+type Key = SeriesKey | 'tj' | 'tu' | 'ta'; // t = completed including estimates (actual c + expected x)
+// Composite t keys come after the c and x keys they're built from.
+const KEYS: Key[] = ['pj', 'pu', 'pa', 'cj', 'cu', 'ca', 'xj', 'xu', 'xa', 'tj', 'tu', 'ta', 'ij', 'iu', 'ia'];
+const MEASURE_KEY = { units: 'u', affordable: 'a', buildings: 'j' } as const;
 
-// Units use fixed thresholds so a color means the same count in every view. Building counts are
-// much smaller, so they get data-driven breaks instead.
+// Units (all or affordable) use fixed thresholds so a color means the same count in every view.
+// Building counts are much smaller, so they get data-driven breaks instead.
 const UNIT_BREAKS = [50, 100, 150, 300, 500, 1000];
 
 interface Series {
@@ -54,9 +56,9 @@ async function buildIndex(): Promise<Index> {
 
   const never = raw.never;
   const orNull = (v: number) => (v === never ? null : v);
-  const projects = raw.rows.map(([lon, lat, u, p, c, e, b, a, fl, ty, nta, x, xl, xh]) => ({
+  const projects = raw.rows.map(([lon, lat, u, p, c, e, b, a, fl, ty, nta, x, xl, xh, aff]) => ({
     lon, lat, nta, boro: raw.boros[b], p, c, x, e,
-    props: { u, ty, a, alt: fl.includes('a'), dob: fl.includes('d'), p, c: orNull(c), xl: orNull(xl), xh: orNull(xh), est: c === never } as ProjectProps,
+    props: { u, aff, ty, a, alt: fl.includes('a'), dob: fl.includes('d'), p, c: orNull(c), xl: orNull(xl), xh: orNull(xh), est: c === never } as ProjectProps,
   }));
 
   return { meta, ctx, neighborhoods, ntas: Object.keys(series), byType, projects };
@@ -92,7 +94,7 @@ export async function getContext() {
 
 function view(ix: Index, f: Filters) {
   const s = ix.ctx.months.indexOf(f.from), e = ix.ctx.months.indexOf(f.to);
-  const key = ((f.stage === 'completed' ? 't' : f.stage[0]) + (f.measure === 'units' ? 'u' : 'j')) as Key;
+  const key = ((f.stage === 'completed' ? 't' : f.stage[0]) + MEASURE_KEY[f.measure]) as Key;
   const { cur, cum } = ix.byType[f.type];
   const valRange = (nta: string, a: number, b: number) => (cum[nta] ? cum[nta][key][b + 1] - cum[nta][key][a] : 0);
   const picked = new Set(f.neighborhoods);
@@ -117,7 +119,7 @@ export async function choropleth(f: Filters): Promise<ChoroplethResponse> {
   const total = Object.values(totals).reduce((a, b) => a + b, 0);
   for (const b in totals) totals[b] = round1(totals[b]);
 
-  return { values, breaks: f.measure === 'units' ? UNIT_BREAKS : buildingBreaks(ix, v), totals, total: round1(total) };
+  return { values, breaks: f.measure === 'buildings' ? buildingBreaks(ix, v) : UNIT_BREAKS, totals, total: round1(total) };
 }
 
 // Quantiles of the current view's nonzero neighborhood values.
@@ -153,6 +155,7 @@ export async function projects(f: Filters): Promise<ProjectsResponse> {
     if (f.borough && p.boro !== f.borough) continue;
     if (picked.size && !picked.has(p.nta)) continue;
     if (f.type === 'new' && p.props.alt) continue;
+    if (f.measure === 'affordable' && !p.props.aff) continue; // only projects with affordable units
     const hit = f.stage === 'permitted' ? within(p.p) : within(p.c) || (p.props.est && within(p.x));
     if (hit) features.push({ type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] as [number, number] }, properties: p.props });
   }
@@ -165,7 +168,7 @@ export async function series(f: Filters): Promise<SeriesResponse> {
   const v = view(ix, f);
   const list = f.selected ? [f.selected] : f.neighborhoods;
   const N = ix.ctx.months.length;
-  const m = f.measure === 'units' ? 'u' : 'j';
+  const m = MEASURE_KEY[f.measure];
   const actualKey = (f.stage === 'completed' ? 'c' : f.stage[0]) + m;
   const actual = new Array(N).fill(0), estimated = new Array(N).fill(0);
   for (const nta of list) {

@@ -55,6 +55,12 @@ export default async function About() {
           change the number of homes aren&apos;t in the data. Withdrawn jobs are left out.
         </li>
         <li><strong>Units</strong> are net new homes (Class A units). <strong>Buildings</strong> counts each job once.</li>
+        <li>
+          <strong>Affordable units</strong> are the income-restricted units that NYC Housing Preservation and Development (HPD) links to each
+          project in the Housing Database, including HPD-financed buildings and units required under inclusionary housing programs. HPD&apos;s records
+          start in 2014, so earlier years show almost none. Projects from the newest DOB NOW filings don&apos;t have affordability data yet. In this view,
+          markers show only projects with affordable units, sized by that count.
+        </li>
         <li><strong>Completed</strong> uses the first certificate of occupancy. <strong>Permitted</strong> uses the first permit date. Both show totals for the months selected on the slider.</li>
         <li>
           <strong>Building type</strong> (in project tooltips) comes from the finished building&apos;s unit count: houses (1–2 units), small multifamily

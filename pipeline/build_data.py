@@ -50,7 +50,7 @@ KINDS = ("n", "a")  # new building, alteration that adds units
 TRAIN_YEARS = (2014, 2019)
 MIN_SAMPLE = 20
 HORIZON_MONTHS = 36
-JOB_COLS = ["job_number", "job_type", "units", "size", "bin", "permit", "complete", "nta2020", "source", "lat", "lon", "address"]
+JOB_COLS = ["job_number", "job_type", "units", "aff", "size", "bin", "permit", "complete", "nta2020", "source", "lat", "lon", "address"]
 BORO_FROM_NTA = {"MN": "Manhattan", "BX": "Bronx", "BK": "Brooklyn", "QN": "Queens", "SI": "Staten Island"}
 
 
@@ -108,7 +108,7 @@ def load_hdb() -> pd.DataFrame:
     """New buildings plus alterations that add units (the map can show either set)."""
     df = soda(
         HDB_ID,
-        select="job_number,job_type,job_status,classanet,classaprop,boro,bin,datepermit,datecomplt,nta2020,version,"
+        select="job_number,job_type,job_status,classanet,classaprop,hpdaffrdbl,boro,bin,datepermit,datecomplt,nta2020,version,"
         "latitude,longitude,addressnum,addressst",
         where="job_type in ('New Building','Alteration') AND job_status != '9. Withdrawn'",
         order="job_number",
@@ -116,7 +116,11 @@ def load_hdb() -> pd.DataFrame:
     df["units"] = pd.to_numeric(df["classanet"], errors="coerce").fillna(0)
     df["size"] = pd.to_numeric(df["classaprop"], errors="coerce").fillna(df.units)
     # Alterations that remove units net out negative; for a construction map we only count additions.
-    df = df[(df.job_type == "New Building") | (df.units > 0)]
+    df = df[(df.job_type == "New Building") | (df.units > 0)].copy()
+    # Affordable units HPD links to the job (HPD's records start in 2014). A few many-to-many links
+    # attribute more affordable units than the job adds, so cap at the job's units.
+    df["aff"] = pd.to_numeric(df.hpdaffrdbl, errors="coerce").fillna(0).clip(lower=0)
+    df["aff"] = df[["aff", "units"]].min(axis=1).clip(lower=0)
     df["permit"] = pd.to_datetime(df["datepermit"], errors="coerce")
     df["complete"] = pd.to_datetime(df["datecomplt"], errors="coerce")
     # "Completed" means a first CO was issued; HDB sets datecomplt only for those.
@@ -186,6 +190,7 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
     jobs["nta2020"] = nta
     jobs = jobs.reset_index().rename(columns={"job": "job_number"})
     jobs["job_type"] = "New Building"
+    jobs["aff"] = 0.0  # DOB NOW filings carry no affordability data
     jobs["complete"] = pd.NaT
     jobs["source"] = "dobnow"
     print(f"  DOB NOW freshness jobs after {after.date()}: {len(jobs)} ({int(jobs.units.sum())} units)", file=sys.stderr)
@@ -249,7 +254,9 @@ def estimate_completions(jobs: pd.DataFrame, dist: dict, last_actual: pd.Period,
 
 
 def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None, dist: dict, last_actual: pd.Period) -> dict:
-    """Return {nta: {pj, pu, cj, cu, xj, xu, ij, iu}} arrays aligned to `months`.
+    """Return {nta: {pj, pu, pa, cj, cu, ca, xj, xu, xa, ij, iu, ia}} arrays aligned to `months`.
+
+    Suffixes: j = jobs (buildings), u = units, a = affordable units.
 
     x = expected completions for jobs still open at `last_actual`: each job spreads its chance of
     finishing over future months using the durations of comparable jobs that were open as long
@@ -268,17 +275,18 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
 
     out: dict[str, dict[str, list]] = {}
     for nta, g in jobs.groupby("nta2020"):
-        s = {k: np.zeros(n) for k in ("pj", "pu", "cj", "cu", "xj", "xu", "ij", "iu")}
+        s = {f + m: np.zeros(n) for f in "pcxi" for m in "jua"}
         for flow, col in (("p", "pm"), ("c", "cm")):
             sub = g[g[col].notna() & (g[col] >= months[0]) & (g[col] <= months[-1])]
             for m, gg in sub.groupby(col):
                 s[f"{flow}j"][idx[m]] += len(gg)
                 s[f"{flow}u"][idx[m]] += gg.units.sum()
+                s[f"{flow}a"][idx[m]] += gg.aff.sum()
         # In progress at end of month m: permitted on/before m, not yet complete by m.
         # Difference arrays: +1 at permit month, -1 at the exit month (completion or staleness).
         ip = g[g.pm.notna()]
-        dj, du = np.zeros(n + 1), np.zeros(n + 1)
-        for pm, cm, kind, bt, u in zip(ip.pm, ip.cm, ip.kind, ip.btype, ip.units):
+        dj, du, da = np.zeros(n + 1), np.zeros(n + 1), np.zeros(n + 1)
+        for pm, cm, kind, bt, u, af in zip(ip.pm, ip.cm, ip.kind, ip.btype, ip.units, ip.aff):
             start = max(pm, months[0])
             if start > months[-1]:
                 continue
@@ -287,17 +295,19 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
             if cand is not None:
                 # Open at last_actual with a usable model: certain until then, expected after.
                 b = la + 1
-                dj[a] += 1; dj[max(a, b)] -= 1; du[a] += u; du[max(a, b)] -= u
+                dj[a] += 1; dj[max(a, b)] -= 1; du[a] += u; du[max(a, b)] -= u; da[a] += af; da[max(a, b)] -= af
                 offs = pm.ordinal - months[0].ordinal
                 for t in range(max(a, b), n):
                     k = t - offs  # months since permit
                     still = (cand > k).mean()
                     s["ij"][t] += still
                     s["iu"][t] += still * u
+                    s["ia"][t] += still * af
                     if stale_months is None or k < stale_months:
                         p_done = (cand == k).mean()
                         s["xj"][t] += p_done
                         s["xu"][t] += p_done * u
+                        s["xa"][t] += p_done * af
                 continue
             end = cm if pd.notna(cm) else None
             if stale_months is not None:
@@ -306,9 +316,10 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
             if end is not None and end <= start:
                 continue
             b = idx[end] if end is not None and end <= months[-1] else n
-            dj[a] += 1; dj[b] -= 1; du[a] += u; du[b] -= u
+            dj[a] += 1; dj[b] -= 1; du[a] += u; du[b] -= u; da[a] += af; da[b] -= af
         s["ij"] += np.cumsum(dj)[:n]
         s["iu"] += np.cumsum(du)[:n]
+        s["ia"] += np.cumsum(da)[:n]
         arrs = {}
         for k, v in s.items():
             if not v.any():
@@ -324,7 +335,7 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
 def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
     """One row per job with month indices so the front end can filter by month with no joins.
 
-    Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index, nta, x, x_lo, x_hi]: p = permit month, c = completion
+    Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index, nta, x, x_lo, x_hi, affordable units]: p = permit month, c = completion
     month, e = month the job leaves "in progress" (completion or staleness), all as offsets from
     months[0], with NEVER meaning never. A job is in progress at t when p <= t < e, matching
     `aggregate`. flags: "a" = alteration, "d" = from DOB NOW.
@@ -344,7 +355,7 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
         exit_ = c if c != never else x
         e = exit_ if p == never or stale_years is None else min(exit_, p + 12 * stale_years)
         flags = ("a" if r.job_type == "Alteration" else "") + ("d" if r.source == "dobnow" else "")
-        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype), r.nta2020, x, x_lo, x_hi])
+        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype), r.nta2020, x, x_lo, x_hi, int(r.aff)])
     # Big projects last so they draw on top of the small ones around them.
     rows.sort(key=lambda row: row[2])
     return {"never": never, "boros": [BORO_FROM_NTA[k] for k in BORO_FROM_NTA], "rows": rows}
@@ -423,7 +434,7 @@ def main() -> None:
     )
     (OUT / "series.json").write_text(json.dumps(series, separators=(",", ":")))
     (OUT / "meta.json").write_text(json.dumps(meta, indent=2))
-    tot = {kind: {k: sum(sum(v.get(kind, {}).get(k, [])) for v in series.values()) for k in ("pu", "cu")} for kind in KINDS}
+    tot = {kind: {k: sum(sum(v.get(kind, {}).get(k, [])) for v in series.values()) for k in ("pu", "cu", "pa", "ca")} for kind in KINDS}
     print(f"Wrote {len(series)} NTAs x {len(months)} months. Totals: {tot}. Unplaced jobs: {len(unplaced)}", file=sys.stderr)
 
 

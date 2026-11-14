@@ -86,7 +86,7 @@ export function Controls({ filters, boroughs, neighborhoods, shareUrl, onChange,
   return (
     <header>
       <h1>NYC Housing Map</h1>
-      <Segmented<Measure> label="Measure" value={filters.measure} options={[['units', 'Units'], ['buildings', 'Buildings']]} onChange={measure => onChange({ measure })} />
+      <Segmented<Measure> label="Measure" value={filters.measure} options={[['units', 'Units'], ['affordable', 'Affordable units', 'Income-restricted units HPD tracks (from 2014)'], ['buildings', 'Buildings']]} onChange={measure => onChange({ measure })} />
       <Segmented<Stage> label="Stage" value={filters.stage} options={[['completed', 'Completed'], ['permitted', 'Permitted']]} onChange={stage => onChange({ stage })} />
       <Segmented<BuildType>
         label="Project type"

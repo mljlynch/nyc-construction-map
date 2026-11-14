@@ -49,6 +49,7 @@ A Next.js (App Router) app on Vercel.
 
 - **Permitted**: by first permit date. **Completed**: by first certificate of occupancy date.
 - The map shows **Completed** (the default) and **Permitted**. The pipeline still writes in-progress counts (`ij`/`iu`: permitted, not yet complete; jobs open more than `--stale-years`, default 8, are treated as abandoned), but the site doesn't show them.
+- **Affordable units** come from the Housing Database's `hpdaffrdbl` field (affordable units HPD links to the job; HPD records start in 2014), capped at the job's net units. Series carry them under the `a` measure suffix (`pa`, `ca`, `xa`, `ia`).
 - **Building type** is set by the finished building's unit count (`classaprop`, or proposed dwelling units for DOB NOW jobs): houses (1–2), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's `bldg_class` and `occ_prop` are blank or "Other" for too many new buildings to use. It appears in project tooltips.
 - The Neighborhoods menu limits the map, markers, totals and chart to the chosen NTAs (combined in the side panel).
 - The time slider selects a start and end month. Both stages show totals over that range. It opens on the last 12 months of actual completions.
