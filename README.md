@@ -9,7 +9,8 @@ uv run pipeline/build_data.py                 # new buildings + DOB NOW freshnes
 uv run pipeline/build_data.py --include-alterations   # also unit-adding alterations
 uv run pipeline/build_data.py --stale-years 0 # never age out unfinished jobs from "in progress"
 uv run pipeline/build_data.py --refresh       # re-download (API responses cache in pipeline/.cache)
-npm install && vercel dev                     # page + API at http://localhost:3000
+npm install && npm run dev                    # Next.js dev server at http://localhost:3000
+npm run build && npm start                    # production build locally
 npm run typecheck
 ```
 
@@ -20,10 +21,17 @@ npm run typecheck
 
 ## How it's served
 
-- `web/` is the static page (MapLibre, no build step).
-- `api/` holds Vercel Functions: `GET /api/meta`, `/api/series`, `/api/neighborhoods`, `/api/projects`. Responses are cached on Vercel's CDN for a day; a deploy clears that cache.
-- The routes read through `lib/store.ts`. Today that's `JsonFileStore`, which reads the pipeline's output in `data/` (bundled into each function via `vercel.json`). To move to a database, add another `DataStore` implementation (e.g. Postgres), have the pipeline write to it, and switch `getStore()`. The routes and the page stay the same.
+A Next.js (App Router) app on Vercel.
 
+- `app/page.tsx` reads the filters from the URL on the server, so a shared link renders the right view from the first paint. `components/` holds the client UI (`HousingMap` owns the filters, URL sync and data fetching; `MapView`, `Controls`, `TimeBar`, `BoroughTotals`, `NeighborhoodPanel`, `Notes`).
+- `lib/filters.ts` parses and serializes filters for the page URL and the API alike.
+- API routes in `app/api/` take the same query parameters as page links and return only what that view needs:
+  - `/api/choropleth`: per-neighborhood values, color breaks and borough totals
+  - `/api/projects`: GeoJSON of the matching projects (markers)
+  - `/api/series`: monthly history for `selected` or the picked `neighborhoods`
+  - `/api/meta`, `/api/neighborhoods`: static metadata and NTA boundaries
+  Responses are cached on Vercel's CDN per URL for a day; a deploy clears that cache.
+- `lib/data/queries.ts` runs those filters; `lib/data/store.ts` is the `DataStore` they read from. Today that's `JsonFileStore` over the pipeline's output in `data/` (shipped with the functions via `next.config.ts`). To move to a database, add another `DataStore` (or rewrite the queries as SQL against it) and switch `getStore()`; routes and components stay the same.
 
 ## Data
 

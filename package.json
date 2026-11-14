@@ -2,14 +2,24 @@
   "name": "nyc-housing-map",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": "22.x"
-  },
+  "engines": { "node": "22.x" },
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1",
+    "maplibre-gl": "4.7.1",
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.2.0",
     "typescript": "^5.7.0"
   }
 }
