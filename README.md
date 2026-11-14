@@ -19,6 +19,10 @@ python3 -m http.server 8765 --directory web   # then open http://localhost:8765
 | DOB NOW: Build – Approved Permits | `rbx6-tga4` | Earliest `issued_date` per job (Initial Permit) |
 | 2020 NTAs | `9nt8-h7nd` | Geometry; DOB NOW points are joined spatially (its `nta` field mixes 2010/2020 names) |
 
+## Project markers
+
+`web/data/projects.json` has one row per job (lon, lat, units, permit / completion / in-progress-exit month index, borough, address). The page shows each job as a circle with area proportional to its units, filtered to the same month, stage and borough as the choropleth. Jobs that were never permitted or completed are left out because no view would show them.
+
 ## Definitions
 
 - **Permitted**: by first permit date. **Completed**: by first certificate of occupancy date.

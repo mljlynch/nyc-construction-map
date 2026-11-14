@@ -10,21 +10,21 @@
 :root {
   --surface-0: #f4f3f0; --surface-1: #fcfcfb; --border: #e2e0db;
   --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7c7b76;
-  --accent: #2a78d6; --zero: #ebe9e4; --outline: #ffffff; --provisional: #b45f06;
+  --accent: #2a78d6; --marker: #eb6834; --zero: #ebe9e4; --outline: #ffffff; --provisional: #b45f06;
   --s1: #cde2fb; --s2: #9ec5f4; --s3: #6da7ec; --s4: #3987e5; --s5: #256abf; --s6: #184f95; --s7: #0d366b;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --surface-0: #121211; --surface-1: #1a1a19; --border: #33332f;
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-    --accent: #3987e5; --zero: #2a2a27; --outline: #1a1a19; --provisional: #f0a04b;
+    --accent: #3987e5; --marker: #d95926; --zero: #2a2a27; --outline: #1a1a19; --provisional: #f0a04b;
     --s1: #0d366b; --s2: #104281; --s3: #1c5cab; --s4: #2a78d6; --s5: #5598e7; --s6: #86b6ef; --s7: #cde2fb;
   }
 }
 :root[data-theme="dark"] {
   --surface-0: #121211; --surface-1: #1a1a19; --border: #33332f;
   --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-  --accent: #3987e5; --zero: #2a2a27; --outline: #1a1a19; --provisional: #f0a04b;
+  --accent: #3987e5; --marker: #d95926; --zero: #2a2a27; --outline: #1a1a19; --provisional: #f0a04b;
   --s1: #0d366b; --s2: #104281; --s3: #1c5cab; --s4: #2a78d6; --s5: #5598e7; --s6: #86b6ef; --s7: #cde2fb;
 }
 * { box-sizing: border-box; }
@@ -56,6 +56,9 @@ aside h2:first-child { margin-top: 0; }
 .legend .ticks { display: flex; gap: 2px; font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .legend .ticks span { flex: 1; min-width: 26px; }
 .legend .row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+.legend .sizes { display: flex; align-items: flex-end; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted); }
+.legend .sizes div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.legend .dot { border-radius: 50%; background: var(--marker); opacity: .8; border: 1px solid var(--outline); }
 .legend .zero { width: 14px; height: 10px; background: var(--zero); border-radius: 2px; border: 1px solid var(--border); }
 .tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); font-size: 12px; z-index: 5; display: none; white-space: nowrap; }
 .tip b { font-variant-numeric: tabular-nums; }
@@ -100,6 +103,9 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
     <div class="seg" id="scale" role="group" aria-label="Color scale">
       <button data-v="quantile" aria-pressed="true">Quantile</button><button data-v="log">Log</button>
     </div>
+    <div class="seg" id="markers" role="group" aria-label="Project markers">
+      <button data-v="on" aria-pressed="true">Projects</button><button data-v="off">Hide</button>
+    </div>
     <label>Borough <select id="boro"><option value="">All boroughs</option></select></label>
   </header>
   <div id="map"><div class="legend" id="legend"></div><div class="tip" id="tip"></div></div>
@@ -127,8 +133,8 @@ const METRIC = { u: 'units', j: 'buildings' };
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const mLabel = m => `${MONTHS[+m.slice(5) - 1]} ${m.slice(0, 4)}`;
 
-const state = { metric: 'u', flow: 'p', mode: 'single', scale: 'quantile', boro: '', t: 0, sel: null, playing: null };
-let meta, series, cum, geo, ntaInfo = {}, breaks = [], map;
+const state = { markers: 'on', metric: 'u', flow: 'p', mode: 'single', scale: 'quantile', boro: '', t: 0, sel: null, playing: null };
+let meta, series, cum, geo, projects, ntaInfo = {}, breaks = [], map;
 
 function seg(id, key, after) {
   $(id).addEventListener('click', e => {
@@ -170,11 +176,34 @@ function fillExpr() {
   return ['match', ['coalesce', ['feature-state', 'c'], 0], 0, c[0], 1, c[1], 2, c[2], 3, c[3], 4, c[4], 5, c[5], 6, c[6], c[7]];
 }
 
+// Circle area tracks unit count (radius ~ sqrt(units)); a floor keeps 1-2 unit homes visible.
+const R_SCALE = 0.36;
+function radiusAt(units, zoom) { return Math.max(2, R_SCALE * Math.sqrt(Math.max(units, 1)) * (zoom >= 14 ? 2.4 : zoom <= 10 ? 0.7 : 0.7 + (zoom - 10) * 0.425)); }
+function radiusExpr() {
+  const at = k => ['max', 2, ['*', R_SCALE * k, ['sqrt', ['max', ['get', 'u'], 1]]]];
+  return ['interpolate', ['linear'], ['zoom'], 10, at(0.7), 14, at(2.4)];
+}
+
+// Same selection as the choropleth: which jobs count toward the current flow at month t.
+function projectFilter() {
+  const t = state.t;
+  const f = state.flow === 'i' ? ['all', ['<=', ['get', 'p'], t], ['<', t, ['get', 'e']]]
+    : ['all', ['>=', ['get', state.flow], state.mode === 'cum' ? 0 : t], ['<=', ['get', state.flow], t]];
+  if (state.boro) f.push(['==', ['get', 'b'], state.boro]);
+  return f;
+}
+
 function paint() {
+  // Controls are live before the basemap style loads; the load handler repaints once sources exist.
+  if (!map?.getSource('nta')) return;
   const t = state.t;
   for (const f of geo.features) {
     const nta = f.properties.nta;
     map.setFeatureState({ source: 'nta', id: nta }, { c: classOf(val(nta, t)), dim: !inBoro(nta), sel: nta === state.sel });
+  }
+  if (map.getLayer('proj')) {
+    map.setFilter('proj', projectFilter());
+    map.setLayoutProperty('proj', 'visibility', state.markers === 'on' ? 'visible' : 'none');
   }
 }
 
@@ -183,7 +212,8 @@ function legend() {
   const lows = [1, ...breaks];
   const ticks = lows.map(b => `<span>${b >= 1000 ? (b / 1000).toFixed(b >= 10000 ? 0 : 1) + 'k' : fmt(b)}+</span>`).join('');
   const what = `${METRIC[state.metric]} ${FLOW[state.flow]}${state.flow === 'i' ? ' (snapshot)' : state.mode === 'cum' ? ' since Jan 2010' : ' in month'}`;
-  $('#legend').innerHTML = `<div class="title">${what[0].toUpperCase() + what.slice(1)} · ${state.scale}</div><div class="swatches">${sw}</div><div class="ticks">${ticks}</div><div class="row"><span class="zero"></span>None</div>`;
+  $('#legend').innerHTML = `<div class="title">${what[0].toUpperCase() + what.slice(1)} · ${state.scale}</div><div class="swatches">${sw}</div><div class="ticks">${ticks}</div><div class="row"><span class="zero"></span>None</div>` +
+    (state.markers === 'on' ? `<div class="sizes"><span>Project units</span>${[10, 100, 500].map(u => { const d = 2 * radiusAt(u, map.getZoom()); return `<div><span class="dot" style="width:${d}px;height:${d}px"></span>${u}</div>`; }).join('')}</div>` : '');
 }
 
 function boroPanel() {
@@ -287,8 +317,11 @@ function fitBoro() {
 }
 
 async function main() {
-  [meta, series, geo] = await Promise.all(['data/meta.json', 'data/series.json', 'data/ntas.geojson'].map(u => fetch(u).then(r => r.json())));
+  [meta, series, geo, projects] = await Promise.all(['data/meta.json', 'data/series.json', 'data/ntas.geojson', 'data/projects.json'].map(u => fetch(u).then(r => r.json())));
   for (const f of geo.features) ntaInfo[f.properties.nta] = f.properties;
+  const projGeo = { type: 'FeatureCollection', features: projects.rows.map(([lon, lat, u, p, c, e, b, a, fl]) => ({
+    type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] },
+    properties: { u, p, c, e, b: projects.boros[b], a, alt: fl.includes('a'), dob: fl.includes('d') } })) };
   cum = {};
   for (const nta in series) { cum[nta] = {}; for (const k in series[nta]) { let a = 0; cum[nta][k] = series[nta][k].map(v => a += v); } }
   meta.boros.forEach(b => $('#boro').insertAdjacentHTML('beforeend', `<option>${b}</option>`));
@@ -313,18 +346,33 @@ async function main() {
       'fill-opacity': ['case', ['boolean', ['feature-state', 'dim'], false], 0.15, 0.92] } });
     map.addLayer({ id: 'nta-line', type: 'line', source: 'nta', paint: { 'line-color': css('--outline'), 'line-width': 0.6 } });
     map.addLayer({ id: 'nta-sel', type: 'line', source: 'nta', paint: { 'line-color': css('--text-primary'), 'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 2.5, 0] } });
-    map.on('mousemove', 'nta-fill', e => {
-      map.getCanvas().style.cursor = 'pointer';
-      const p = e.features[0].properties;
-      showTip(e.originalEvent, `<div style="font-weight:600">${p.name}</div><span class="muted">${p.boro}</span><br><b>${fmt(val(p.nta, state.t))}</b> ${METRIC[state.metric]} ${FLOW[state.flow]}`);
+    map.addSource('proj', { type: 'geojson', data: projGeo });
+    map.addLayer({ id: 'proj', type: 'circle', source: 'proj', filter: projectFilter(), paint: {
+      'circle-radius': radiusExpr(), 'circle-color': css('--marker'), 'circle-opacity': 0.7,
+      'circle-stroke-color': css('--outline'), 'circle-stroke-width': 1 } });
+    const NEVER = projects.never, when = i => i >= 0 && i < NEVER ? mLabel(meta.months[i]) : i < 0 ? 'before 2010' : null;
+    // One handler so a project under the cursor wins over the neighborhood beneath it.
+    map.on('mousemove', e => {
+      const hit = map.queryRenderedFeatures(e.point, { layers: map.getLayer('proj') && state.markers === 'on' ? ['proj', 'nta-fill'] : ['nta-fill'] });
+      const pr = hit.find(f => f.layer.id === 'proj'), n = hit.find(f => f.layer.id === 'nta-fill');
+      map.getCanvas().style.cursor = pr || n ? 'pointer' : '';
+      if (pr) {
+        const p = pr.properties;
+        showTip(e.originalEvent, `<div style="font-weight:600">${p.a || 'Address unknown'}</div><b>${fmt(p.u)}</b> units · ${p.alt ? 'alteration' : 'new building'}` +
+          `<br><span class="muted">Permitted ${when(p.p) ?? '—'}${when(p.c) ? ` · completed ${when(p.c)}` : ''}${p.dob ? '<br>DOB NOW filing (provisional)' : ''}</span>`);
+      } else if (n) {
+        const p = n.properties;
+        showTip(e.originalEvent, `<div style="font-weight:600">${p.name}</div><span class="muted">${p.boro}</span><br><b>${fmt(val(p.nta, state.t))}</b> ${METRIC[state.metric]} ${FLOW[state.flow]}`);
+      } else $('#tip').style.display = 'none';
     });
-    map.on('mouseleave', 'nta-fill', () => { map.getCanvas().style.cursor = ''; $('#tip').style.display = 'none'; });
+    map.on('mouseout', () => { $('#tip').style.display = 'none'; });
+    map.on('zoomend', legend);
     map.on('click', 'nta-fill', e => { state.sel = e.features[0].properties.nta; paint(); nbhdPanel(); });
     refresh(true);
   });
 
   seg('#metric', 'metric'); seg('#flow', 'flow', () => { if (state.flow === 'i' && state.mode === 'cum') { state.mode = 'single'; $('#mode').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === 'single')); } });
-  seg('#mode', 'mode'); seg('#scale', 'scale');
+  seg('#mode', 'mode'); seg('#scale', 'scale'); seg('#markers', 'markers');
   $('#boro').addEventListener('change', e => { state.boro = e.target.value; fitBoro(); refresh(true); });
   $('#boros').addEventListener('click', e => { const b = e.target.closest('.boro'); if (!b) return; state.boro = state.boro === b.dataset.b ? '' : b.dataset.b; $('#boro').value = state.boro; fitBoro(); refresh(true); });
   $('#slider').addEventListener('input', e => setT(+e.target.value));

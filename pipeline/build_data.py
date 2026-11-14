@@ -39,6 +39,7 @@ CACHE = ROOT / "pipeline" / ".cache"
 # HDB only records completions from 2010 on, so earlier months would be incomplete.
 START_MONTH = pd.Period("2010-01", "M")
 BOROS = {"1": "Manhattan", "2": "Bronx", "3": "Brooklyn", "4": "Queens", "5": "Staten Island"}
+JOB_COLS = ["job_number", "job_type", "units", "bin", "permit", "complete", "nta2020", "source", "lat", "lon", "address"]
 BORO_FROM_NTA = {"MN": "Manhattan", "BX": "Bronx", "BK": "Brooklyn", "QN": "Queens", "SI": "Staten Island"}
 
 
@@ -96,7 +97,8 @@ def load_hdb(include_alterations: bool) -> pd.DataFrame:
     types = ["'New Building'"] + (["'Alteration'"] if include_alterations else [])
     df = soda(
         HDB_ID,
-        select="job_number,job_type,job_status,classanet,boro,bin,datepermit,datecomplt,nta2020,version",
+        select="job_number,job_type,job_status,classanet,boro,bin,datepermit,datecomplt,nta2020,version,"
+        "latitude,longitude,addressnum,addressst",
         where=f"job_type in ({','.join(types)}) AND job_status != '9. Withdrawn'",
         order="job_number",
     )
@@ -108,8 +110,11 @@ def load_hdb(include_alterations: bool) -> pd.DataFrame:
     df["complete"] = pd.to_datetime(df["datecomplt"], errors="coerce")
     # "Completed" means a first CO was issued; HDB sets datecomplt only for those.
     df["source"] = "hdb"
+    df["lat"] = pd.to_numeric(df.latitude, errors="coerce")
+    df["lon"] = pd.to_numeric(df.longitude, errors="coerce")
+    df["address"] = (df.addressnum.fillna("") + " " + df.addressst.fillna("")).str.strip()
     df.attrs["version"] = df.version.dropna().iloc[0]
-    return df[["job_number", "job_type", "units", "bin", "permit", "complete", "nta2020", "source"]]
+    return df[JOB_COLS]
 
 
 def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes: list[str]) -> pd.DataFrame:
@@ -117,7 +122,7 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
     filings = soda(
         FILINGS_ID,
         select="job_filing_number,bin,proposed_dwelling_units,existing_dwelling_units,"
-        "first_permit_date,filing_status,latitude,longitude",
+        "first_permit_date,filing_status,latitude,longitude,house_no,street_name",
         where="job_type='New Building' AND first_permit_date IS NOT NULL",
         order="job_filing_number",
     )
@@ -149,17 +154,19 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
         lat=("latitude", "last"),
         lon=("longitude", "last"),
         status=("filing_status", "last"),
+        house=("house_no", "last"),
+        street=("street_name", "last"),
     )
     jobs["permit"] = pd.concat([jobs.permit, first_issued.reindex(jobs.index)], axis=1).min(axis=1)
     jobs = jobs[(jobs.permit > after) & (jobs.status != "Filing Withdrawn")]
     # HDB already knows about jobs it picked up; its job numbers differ, so match on BIN.
     jobs = jobs[~jobs.bin.isin(set(hdb.bin.dropna()))]
 
-    lat = pd.to_numeric(jobs.lat, errors="coerce")
-    lon = pd.to_numeric(jobs.lon, errors="coerce")
-    ok = lat.notna() & lon.notna()
-    jobs = jobs[ok].copy()
-    pts = points(lon[ok].to_numpy(), lat[ok].to_numpy())
+    jobs["lat"] = pd.to_numeric(jobs.lat, errors="coerce")
+    jobs["lon"] = pd.to_numeric(jobs.lon, errors="coerce")
+    jobs = jobs[jobs.lat.notna() & jobs.lon.notna()].copy()
+    jobs["address"] = (jobs.house.fillna("") + " " + jobs.street.fillna("")).str.strip()
+    pts = points(jobs.lon.to_numpy(), jobs.lat.to_numpy())
     pt_idx, poly_idx = ntree.query(pts, predicate="within")
     nta = np.full(len(jobs), None, dtype=object)
     nta[pt_idx] = np.array(ncodes, dtype=object)[poly_idx]
@@ -169,7 +176,7 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
     jobs["complete"] = pd.NaT
     jobs["source"] = "dobnow"
     print(f"  DOB NOW freshness jobs after {after.date()}: {len(jobs)} ({int(jobs.units.sum())} units)", file=sys.stderr)
-    return jobs[["job_number", "job_type", "units", "bin", "permit", "complete", "nta2020", "source"]]
+    return jobs[JOB_COLS]
 
 
 def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
@@ -212,6 +219,31 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
         s["iu"] = np.cumsum(du)[:n]
         out[nta] = {k: [int(round(x)) for x in v] for k, v in s.items()}
     return out
+
+
+def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
+    """One row per job with month indices so the front end can filter by month with no joins.
+
+    Rows are [lon, lat, units, p, c, e, boro, address, flags]: p = permit month, c = completion
+    month, e = month the job leaves "in progress" (completion or staleness), all as offsets from
+    months[0], with NEVER meaning never. A job is in progress at t when p <= t < e, matching
+    `aggregate`. flags: "a" = alteration, "d" = from DOB NOW.
+    """
+    never = 99999
+    m0 = months[0]
+    boro_idx = {code: i for i, code in enumerate(BORO_FROM_NTA)}
+    rows = []
+    for r in jobs[jobs.lat.notna() & jobs.lon.notna() & jobs.nta2020.notna()].itertuples():
+        p = (r.permit.to_period("M") - m0).n if pd.notna(r.permit) else never
+        c = (r.complete.to_period("M") - m0).n if pd.notna(r.complete) else never
+        if p == never and c == never:
+            continue  # filed or approved only: never permitted, so never on the map
+        e = c if p == never or stale_years is None else min(c, p + 12 * stale_years)
+        flags = ("a" if r.job_type == "Alteration" else "") + ("d" if r.source == "dobnow" else "")
+        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags])
+    # Big projects last so they draw on top of the small ones around them.
+    rows.sort(key=lambda row: row[2])
+    return {"never": never, "boros": [BORO_FROM_NTA[k] for k in BORO_FROM_NTA], "rows": rows}
 
 
 def main() -> None:
@@ -265,6 +297,9 @@ def main() -> None:
     }
 
     (OUT / "ntas.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}, separators=(",", ":")))
+    (OUT / "projects.json").write_text(
+        json.dumps(project_points(jobs, months, args.stale_years or None), separators=(",", ":"))
+    )
     (OUT / "series.json").write_text(json.dumps(series, separators=(",", ":")))
     (OUT / "meta.json").write_text(json.dumps(meta, indent=2))
     tot = {k: sum(sum(v[k]) for v in series.values()) for k in ("pj", "pu", "cj", "cu")}
