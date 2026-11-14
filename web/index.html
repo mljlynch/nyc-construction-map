@@ -3,7 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NYC New Construction</title>
+<title>NYC Housing Map · New residential construction by neighborhood</title>
+<meta name="description" content="Interactive map of new housing in New York City: units and buildings permitted, completed and under construction in every neighborhood since 2010, with estimated completions through 2029. Built from NYC Planning's Housing Database and DOB NOW.">
+<link rel="canonical" href="https://nychousingmap.com/">
+<meta name="theme-color" content="#1a1a19">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="NYC Housing Map">
+<meta property="og:url" content="https://nychousingmap.com/">
+<meta property="og:title" content="NYC Housing Map">
+<meta property="og:description" content="Where New York is building homes: units permitted, completed and underway in every neighborhood since 2010, with estimates through 2029.">
+<meta property="og:image" content="https://nychousingmap.com/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Lower Manhattan skyline at dusk with the title NYC Housing Map">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="NYC Housing Map">
+<meta name="twitter:description" content="Where New York is building homes: units permitted, completed and underway in every neighborhood since 2010, with estimates through 2029.">
+<meta name="twitter:image" content="https://nychousingmap.com/og.jpg">
+<meta name="twitter:image:alt" content="Lower Manhattan skyline at dusk with the title NYC Housing Map">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "NYC Housing Map",
+  "url": "https://nychousingmap.com/",
+  "description": "Interactive map of new residential construction in New York City by neighborhood and month: units and buildings permitted, completed and in progress since 2010, with estimated completions through 2029.",
+  "applicationCategory": "ReferenceApplication",
+  "operatingSystem": "Any",
+  "isAccessibleForFree": true,
+  "image": "https://nychousingmap.com/og.jpg",
+  "spatialCoverage": { "@type": "Place", "name": "New York City" },
+  "isBasedOn": [
+    "https://data.cityofnewyork.us/d/br6q-ssj3",
+    "https://data.cityofnewyork.us/d/w9ak-ipjd",
+    "https://data.cityofnewyork.us/d/rbx6-tga4",
+    "https://data.cityofnewyork.us/d/9nt8-h7nd"
+  ]
+}
+</script>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <style>
@@ -110,9 +149,10 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
 </style>
 </head>
 <body>
+<noscript><p style="padding:16px">NYC Housing Map is an interactive map of new residential construction in New York City: units and buildings permitted, completed and under construction in each neighborhood since 2010, with estimated completions through 2029, from NYC Planning's Housing Database and DOB NOW. It needs JavaScript to run.</p></noscript>
 <div class="app">
   <header>
-    <h1>NYC new residential construction</h1>
+    <h1>NYC Housing Map</h1>
     <div class="seg" id="metric" role="group" aria-label="Measure">
       <button data-v="u" aria-pressed="true">Units</button><button data-v="j">Buildings</button>
     </div>
