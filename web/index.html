@@ -40,6 +40,7 @@ header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; }
 .seg button:disabled { opacity: .4; cursor: not-allowed; }
 select { font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); }
 #map { position: relative; min-height: 300px; }
+#map:not(.ready) .legend { visibility: hidden; }
 aside { grid-row: 2 / 4; grid-column: 2; overflow-y: auto; background: var(--surface-1); border-left: 1px solid var(--border); padding: 14px 16px; }
 aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 18px 0 8px; font-weight: 600; }
 aside h2:first-child { margin-top: 0; }
@@ -197,10 +198,12 @@ function valRange(nta, s, e) {
 const val = nta => valRange(nta, state.s, state.e);
 const inView = nta => (!state.boro || ntaInfo[nta]?.boro === state.boro) && (!state.ntas.size || state.ntas.has(nta));
 
-// Breaks come from every window of the current length (or every month, for the in-progress
-// snapshot), so colors stay comparable as the window slides or plays, and quantiles keep the
-// 2015/2022 421-a spikes from washing out everything else.
+// Units use fixed thresholds so a color means the same count in every view. Building counts are
+// much smaller, so they keep data-driven breaks: quantiles over every window of the current length
+// (or every month, for the in-progress snapshot), so colors stay comparable as the window slides.
+const UNIT_BREAKS = [50, 100, 150, 300, 500, 1000];
 function computeBreaks() {
+  if (state.metric === 'u') { breaks = UNIT_BREAKS; breaksKey = ''; return; }
   const L = state.flow === 'i' ? 1 : state.e - state.s + 1;
   const key = [state.flow, state.metric, state.boro, [...state.ntas].join(), L].join('|');
   if (key === breaksKey) return;
@@ -258,18 +261,36 @@ function rangeText() {
 }
 const whatText = () => `${METRIC[state.metric]} ${FLOW[state.flow]}`;
 
+// Map updates are debounced and staged so the markers and the choropleth change together: a new
+// marker filter is re-laid-out in a worker and shows up a beat later, while feature-state colors
+// apply on the next frame. So the filter goes first, and the colors wait for the map to go idle.
+const RENDER_DELAY = 120;
+const NTA_OPACITY = ['case', ['boolean', ['feature-state', 'dim'], false], 0.15, 0.92];
+let renderTimer, renderSeq = 0;
 function paint() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(applyMap, RENDER_DELAY);
+}
+function applyMap() {
   // Controls are live before the basemap style loads; the load handler repaints once sources exist.
-  if (!map?.getSource('nta')) return;
-  for (const f of geo.features) {
-    const nta = f.properties.nta;
-    map.setFeatureState({ source: 'nta', id: nta }, { c: classOf(val(nta)), dim: !inView(nta), sel: nta === state.sel });
-  }
-  if (map.getLayer('proj')) {
-    map.setFilter('proj', projectFilter());
+  if (!map?.getLayer('proj')) return;
+  const seq = ++renderSeq;
+  map.setFilter('proj', projectFilter());
+  map.once('idle', () => {
+    if (seq !== renderSeq) return; // a newer render superseded this one
     // Projects placed by an estimated completion date draw faded.
     map.setPaintProperty('proj', 'circle-opacity', state.flow === 'c' ? ['case', ['==', ['get', 'c'], NEVER], 0.3, 0.75] : 0.7);
-  }
+    for (const f of geo.features) {
+      const nta = f.properties.nta;
+      map.setFeatureState({ source: 'nta', id: nta }, { c: classOf(val(nta)), dim: !inView(nta), sel: nta === state.sel });
+    }
+    if (!$('#map').classList.contains('ready')) {
+      // First render: both data layers start transparent and appear together here.
+      map.setPaintProperty('nta-fill', 'fill-opacity', NTA_OPACITY);
+      $('#map').classList.add('ready');
+    }
+  });
+  map.triggerRepaint(); // guarantees an idle event even when the filter didn't change
 }
 const projectedIn = () => state.flow !== 'p' && meta.months[state.e] >= meta.projectedFrom;
 const pastData = () => state.flow === 'p' && meta.months[state.e] > meta.dataEnd;
@@ -489,12 +510,12 @@ async function main() {
     map.addSource('nta', { type: 'geojson', data: geo, promoteId: 'nta' });
     map.addLayer({ id: 'nta-fill', type: 'fill', source: 'nta', paint: {
       'fill-color': fillExpr(),
-      'fill-opacity': ['case', ['boolean', ['feature-state', 'dim'], false], 0.15, 0.92] } });
+      'fill-opacity': 0 } });
     map.addLayer({ id: 'nta-line', type: 'line', source: 'nta', paint: { 'line-color': css('--outline'), 'line-width': 0.6 } });
     map.addLayer({ id: 'nta-sel', type: 'line', source: 'nta', paint: { 'line-color': css('--text-primary'), 'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 2.5, 0] } });
     map.addSource('proj', { type: 'geojson', data: projGeo });
     map.addLayer({ id: 'proj', type: 'circle', source: 'proj', filter: projectFilter(), paint: {
-      'circle-radius': radiusExpr(), 'circle-color': css('--marker'), 'circle-opacity': 0.7,
+      'circle-radius': radiusExpr(), 'circle-color': css('--marker'), 'circle-opacity': 0,
       'circle-stroke-color': css('--outline'), 'circle-stroke-width': 1 } });
     const mon = i => i < N ? mLabel(meta.months[i]) : `after ${mLabel(meta.months[N - 1])}`;
     const when = i => i >= 0 && i < NEVER ? mLabel(meta.months[i]) : i < 0 ? 'before 2010' : null;
