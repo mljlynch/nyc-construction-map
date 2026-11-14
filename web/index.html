@@ -57,8 +57,17 @@ aside h2:first-child { margin-top: 0; }
 .range input:disabled::-moz-range-thumb { visibility: hidden; }
 .range .years { position: absolute; left: 8px; right: 8px; top: 24px; height: 12px; font-size: 10px; color: var(--text-muted); }
 .range .years span { position: absolute; transform: translateX(-50%); }
-.types button { padding: 5px 8px; }
-.types-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.ms { position: relative; }
+#msBtn { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); cursor: pointer; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-panel { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; width: 300px; max-width: calc(100vw - 32px); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.ms-head { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); }
+.ms-head input { flex: 1; min-width: 0; font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-0); color: var(--text-primary); }
+.ms-head button { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.ms-list { max-height: 320px; overflow-y: auto; padding: 4px 0; }
+.ms-list .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 6px 10px 2px; }
+.ms-list label { display: flex; gap: 8px; align-items: center; padding: 3px 10px; cursor: pointer; }
+.ms-list label:hover { background: var(--surface-0); }
+.ms-list input { accent-color: var(--accent); }
 #play { width: 34px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 13px; }
 .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--provisional); color: var(--provisional); white-space: nowrap; }
 .legend { position: absolute; left: 12px; bottom: 12px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; z-index: 2; max-width: 300px; }
@@ -107,14 +116,14 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
     <div class="seg" id="flow" role="group" aria-label="Stage">
       <button data-v="p" aria-pressed="true">Permitted</button><button data-v="c">Completed</button><button data-v="i">In progress</button>
     </div>
-    <label class="types-wrap">Building type <div class="seg types" id="types" role="group" aria-label="Building type (select one or more)"></div></label>
-    <div class="seg" id="scale" role="group" aria-label="Color scale">
-      <button data-v="quantile" aria-pressed="true">Quantile</button><button data-v="log">Log</button>
-    </div>
-    <div class="seg" id="markers" role="group" aria-label="Project markers">
-      <button data-v="on" aria-pressed="true">Projects</button><button data-v="off">Hide</button>
-    </div>
     <label>Borough <select id="boro"><option value="">All boroughs</option></select></label>
+    <div class="ms" id="ms">
+      <button id="msBtn" aria-haspopup="true" aria-expanded="false"><span id="msLabel">All neighborhoods</span> ▾</button>
+      <div class="ms-panel" id="msPanel" hidden>
+        <div class="ms-head"><input id="msSearch" type="search" placeholder="Search neighborhoods" aria-label="Search neighborhoods"><button id="msClear">Clear</button></div>
+        <div class="ms-list" id="msList"></div>
+      </div>
+    </div>
   </header>
   <div id="map"><div class="legend" id="legend"></div><div class="tip" id="tip"></div></div>
   <aside>
@@ -145,9 +154,8 @@ const FLOW = { p: 'permitted', c: 'completed', i: 'in progress' };
 const METRIC = { u: 'units', j: 'buildings' };
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const mLabel = m => `${MONTHS[+m.slice(5) - 1]} ${m.slice(0, 4)}`;
-const TYPE_SHORT = ['Houses', '3–9 units', '10–49', '50+'];
 
-const state = { markers: 'on', metric: 'u', flow: 'p', scale: 'quantile', boro: '', types: [0, 1, 2, 3], s: 0, e: 0, sel: null, playing: null };
+const state = { metric: 'u', flow: 'p', boro: '', ntas: new Set(), s: 0, e: 0, sel: null, playing: null };
 let meta, series, cur, cum, geo, projects, ntaInfo = {}, breaks = [], breaksKey = '', map, N;
 
 function seg(id, key) {
@@ -159,15 +167,14 @@ function seg(id, key) {
   });
 }
 
-// Sum the selected building types into one set of monthly arrays per NTA, plus prefix sums
-// (cum[k][i] = total of months < i) so any month range is a single subtraction.
+// Monthly arrays per NTA plus prefix sums (cum[k][i] = total of months < i), so any month
+// range is a single subtraction. The file omits all-zero arrays.
 function buildSeries() {
   cur = {}; cum = {};
   for (const nta in series) {
     cur[nta] = {}; cum[nta] = {};
     for (const k of ['pj', 'pu', 'cj', 'cu', 'ij', 'iu']) {
-      const a = new Array(N).fill(0);
-      for (const t of state.types) { const src = series[nta][t]?.[k]; if (src) for (let i = 0; i < N; i++) a[i] += src[i]; }
+      const a = series[nta][k] ?? new Array(N).fill(0);
       cur[nta][k] = a;
       const c = new Array(N + 1); c[0] = 0; for (let i = 0; i < N; i++) c[i + 1] = c[i] + a[i];
       cum[nta][k] = c;
@@ -184,25 +191,22 @@ function valRange(nta, s, e) {
   return cum[nta][k][e + 1] - cum[nta][k][s];
 }
 const val = nta => valRange(nta, state.s, state.e);
-const inBoro = nta => !state.boro || ntaInfo[nta]?.boro === state.boro;
+const inView = nta => (!state.boro || ntaInfo[nta]?.boro === state.boro) && (!state.ntas.size || state.ntas.has(nta));
 
 // Breaks come from every window of the current length (or every month, for the in-progress
 // snapshot), so colors stay comparable as the window slides or plays, and quantiles keep the
 // 2015/2022 421-a spikes from washing out everything else.
 function computeBreaks() {
   const L = state.flow === 'i' ? 1 : state.e - state.s + 1;
-  const key = [state.flow, state.metric, state.scale, state.boro, state.types.join(), L].join('|');
+  const key = [state.flow, state.metric, state.boro, [...state.ntas].join(), L].join('|');
   if (key === breaksKey) return;
   breaksKey = key;
   const vals = [];
-  for (const nta in cur) if (inBoro(nta)) for (let i = 0; i + L <= N; i++) { const v = valRange(nta, i, i + L - 1); if (v > 0) vals.push(v); }
+  for (const nta in cur) if (inView(nta)) for (let i = 0; i + L <= N; i++) { const v = valRange(nta, i, i + L - 1); if (v > 0) vals.push(v); }
   vals.sort((a, b) => a - b);
   const n = 7;
   if (!vals.length) breaks = [2, 3, 5, 10, 15, 20];
-  else if (state.scale === 'log') {
-    const lo = Math.log10(Math.max(1, vals[0])), hi = Math.log10(vals[vals.length - 1]);
-    breaks = niceBreaks(Array.from({ length: n - 1 }, (_, i) => 10 ** (lo + (hi - lo) * (i + 1) / n)));
-  } else breaks = niceBreaks(Array.from({ length: n - 1 }, (_, i) => vals[Math.floor(vals.length * (i + 1) / n)]));
+  else breaks = niceBreaks(Array.from({ length: n - 1 }, (_, i) => vals[Math.floor(vals.length * (i + 1) / n)]));
 }
 // Snap raw breaks to round numbers (5, 10, 25, 50, 100, 250…) so the legend reads as clean ranges.
 const NICE = [];
@@ -236,8 +240,8 @@ function projectFilter() {
   const { s, e } = state;
   const f = state.flow === 'i' ? ['all', ['<=', ['get', 'p'], e], ['<', e, ['get', 'e']]]
     : ['all', ['>=', ['get', state.flow], s], ['<=', ['get', state.flow], e]];
-  f.push(['in', ['get', 'ty'], ['literal', state.types]]);
   if (state.boro) f.push(['==', ['get', 'b'], state.boro]);
+  if (state.ntas.size) f.push(['in', ['get', 'n'], ['literal', [...state.ntas]]]);
   return f;
 }
 
@@ -253,12 +257,9 @@ function paint() {
   if (!map?.getSource('nta')) return;
   for (const f of geo.features) {
     const nta = f.properties.nta;
-    map.setFeatureState({ source: 'nta', id: nta }, { c: classOf(val(nta)), dim: !inBoro(nta), sel: nta === state.sel });
+    map.setFeatureState({ source: 'nta', id: nta }, { c: classOf(val(nta)), dim: !inView(nta), sel: nta === state.sel });
   }
-  if (map.getLayer('proj')) {
-    map.setFilter('proj', projectFilter());
-    map.setLayoutProperty('proj', 'visibility', state.markers === 'on' ? 'visible' : 'none');
-  }
+  if (map.getLayer('proj')) map.setFilter('proj', projectFilter());
 }
 
 function legend() {
@@ -270,29 +271,36 @@ function legend() {
   }).reverse().join('');
   const what = whatText();
   $('#legend').innerHTML = `<div class="title">${what[0].toUpperCase() + what.slice(1)}, ${rangeText()}</div><div class="lrows">${rows}<div class="lrow"><span class="lsw zero"></span>None</div></div>` +
-    (state.markers === 'on' && map ? `<div class="sizes"><span>Project units</span>${[10, 100, 500].map(u => { const d = 2 * radiusAt(u, map.getZoom()); return `<div><span class="dot" style="width:${d}px;height:${d}px"></span>${u}</div>`; }).join('')}</div>` : '');
+    (map ? `<div class="sizes"><span>Project units</span>${[10, 100, 500].map(u => { const d = 2 * radiusAt(u, map.getZoom()); return `<div><span class="dot" style="width:${d}px;height:${d}px"></span>${u}</div>`; }).join('')}</div>` : '');
 }
 
 function boroPanel() {
   const tot = {};
   for (const b of meta.boros) tot[b] = 0;
-  for (const nta in cur) { const b = ntaInfo[nta]?.boro; if (b in tot) tot[b] += val(nta); }
+  // A borough filter only dims the other rows; a neighborhood selection restricts the totals to it.
+  for (const nta in cur) { const b = ntaInfo[nta]?.boro; if (b in tot && (!state.ntas.size || state.ntas.has(nta))) tot[b] += val(nta); }
   const max = Math.max(1, ...Object.values(tot));
   const sum = Object.values(tot).reduce((a, b) => a + b, 0);
-  const typeNote = state.types.length === 4 ? 'all building types' : state.types.map(t => meta.buildingTypes[t].toLowerCase()).join(', ');
   $('#totalsTitle').textContent = `Borough totals · ${rangeText()}`;
-  $('#boros').innerHTML = `<div class="muted" style="margin-bottom:6px">${whatText()} · ${typeNote}</div>` +
+  const scope = state.ntas.size ? ` · ${state.ntas.size} selected neighborhood${state.ntas.size > 1 ? 's' : ''}` : '';
+  $('#boros').innerHTML = `<div class="muted" style="margin-bottom:6px">${whatText()}${scope}</div>` +
     meta.boros.map(b => `<div class="boro ${state.boro && state.boro !== b ? 'dim' : ''}" data-b="${b}"><span>${b}</span><div class="bar" style="width:${tot[b] / max * 100}%"></div><span class="v">${fmt(tot[b])}</span></div>`).join('') +
-    `<div class="total"><span>New York City</span><span>${fmt(sum)}</span></div>`;
+    (state.ntas.size ? `<div class="total"><span>Selected total</span><span>${fmt(sum)}</span></div>`
+      : `<div class="total"><span>New York City</span><span>${fmt(sum)}</span></div>`);
 }
 
+// The clicked neighborhood, or the dropdown selection combined when nothing is clicked.
 function nbhdPanel() {
-  if (!state.sel) return;
-  const nta = state.sel, info = ntaInfo[nta], k = state.flow + state.metric;
-  const s = cur[nta]?.[k] ?? new Array(N).fill(0);
+  const list = state.sel ? [state.sel] : [...state.ntas];
+  if (!list.length) { $('#nbhd').classList.add('muted'); $('#nbhd').textContent = 'Click a neighborhood on the map, or pick some from the Neighborhoods menu, to see monthly history.'; $('#chart').innerHTML = ''; return; }
+  const k = state.flow + state.metric, s = new Array(N).fill(0);
+  for (const nta of list) cur[nta]?.[k].forEach((v, i) => s[i] += v);
+  const total = list.reduce((a, nta) => a + val(nta), 0);
+  const head = list.length === 1
+    ? `<div style="font-weight:600">${ntaInfo[list[0]].name}</div><div class="muted">${ntaInfo[list[0]].boro} · ${list[0]}</div>`
+    : `<div style="font-weight:600">${list.length} neighborhoods combined</div><div class="muted">${list.map(n => ntaInfo[n].name).join(', ')}</div>`;
   $('#nbhd').classList.remove('muted');
-  $('#nbhd').innerHTML = `<div style="font-weight:600">${info.name}</div><div class="muted">${info.boro} · ${nta}</div>` +
-    `<div style="margin-top:8px"><span class="hero">${fmt(val(nta))}</span> <span class="muted">${whatText()} · ${rangeText()}</span></div>`;
+  $('#nbhd').innerHTML = head + `<div style="margin-top:8px"><span class="hero">${fmt(total)}</span> <span class="muted">${whatText()} · ${rangeText()}</span></div>`;
   drawChart(s);
 }
 
@@ -379,31 +387,60 @@ function play() {
   state.playing = setInterval(() => { if (state.e >= N - 1) return play(); setRange(state.s + 1, state.e + 1); }, 140);
 }
 
-function fitBoro() {
+function fitView() {
   const bb = [180, 90, -180, -90];
   const walk = c => typeof c[0] === 'number' ? (bb[0] = Math.min(bb[0], c[0]), bb[1] = Math.min(bb[1], c[1]), bb[2] = Math.max(bb[2], c[0]), bb[3] = Math.max(bb[3], c[1])) : c.forEach(walk);
-  geo.features.forEach(f => { if (!state.boro || f.properties.boro === state.boro) walk(f.geometry.coordinates); });
+  geo.features.forEach(f => { if (inView(f.properties.nta)) walk(f.geometry.coordinates); });
   map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: 30, duration: 600 });
+}
+
+const ntaSorted = () => Object.values(ntaInfo).filter(p => series[p.nta]).sort((a, b) => a.boro.localeCompare(b.boro) || a.name.localeCompare(b.name));
+function renderNtaList() {
+  const q = $('#msSearch').value.trim().toLowerCase();
+  let html = '', grp = '';
+  for (const p of ntaSorted()) {
+    if (state.boro && p.boro !== state.boro) continue;
+    if (q && !p.name.toLowerCase().includes(q)) continue;
+    if (p.boro !== grp) { grp = p.boro; html += `<div class="grp">${grp}</div>`; }
+    html += `<label><input type="checkbox" value="${p.nta}" ${state.ntas.has(p.nta) ? 'checked' : ''}>${p.name}</label>`;
+  }
+  $('#msList').innerHTML = html || '<div class="muted" style="padding:8px 10px">No matches</div>';
+  const n = state.ntas.size;
+  $('#msLabel').textContent = !n ? 'All neighborhoods' : n === 1 ? ntaInfo[[...state.ntas][0]].name : `${n} neighborhoods`;
+}
+function setupNtaPicker() {
+  const open = v => { $('#msPanel').hidden = !v; $('#msBtn').setAttribute('aria-expanded', v); if (v) { renderNtaList(); $('#msSearch').focus(); } };
+  $('#msBtn').addEventListener('click', () => open($('#msPanel').hidden));
+  document.addEventListener('click', e => { if (!$('#ms').contains(e.target)) open(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
+  $('#msSearch').addEventListener('input', renderNtaList);
+  $('#msClear').addEventListener('click', () => { state.ntas.clear(); state.sel = null; renderNtaList(); fitView(); refresh(); });
+  $('#msList').addEventListener('change', e => {
+    const n = e.target.value;
+    e.target.checked ? state.ntas.add(n) : state.ntas.delete(n);
+    state.sel = null; // the side panel follows the selection
+    renderNtaList(); fitView(); refresh();
+  });
+  renderNtaList();
 }
 
 async function main() {
   [meta, series, geo, projects] = await Promise.all(['data/meta.json', 'data/series.json', 'data/ntas.geojson', 'data/projects.json'].map(u => fetch(u).then(r => r.json())));
   N = meta.months.length;
   for (const f of geo.features) ntaInfo[f.properties.nta] = f.properties;
-  const projGeo = { type: 'FeatureCollection', features: projects.rows.map(([lon, lat, u, p, c, e, b, a, fl, ty]) => ({
+  const projGeo = { type: 'FeatureCollection', features: projects.rows.map(([lon, lat, u, p, c, e, b, a, fl, ty, n]) => ({
     type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] },
-    properties: { u, p, c, e, ty, b: projects.boros[b], a, alt: fl.includes('a'), dob: fl.includes('d') } })) };
+    properties: { u, p, c, e, ty, n, b: projects.boros[b], a, alt: fl.includes('a'), dob: fl.includes('d') } })) };
   buildSeries();
 
   meta.boros.forEach(b => $('#boro').insertAdjacentHTML('beforeend', `<option>${b}</option>`));
-  $('#types').innerHTML = meta.buildingTypes.map((t, i) => `<button data-t="${i}" aria-pressed="true" title="${t}">${TYPE_SHORT[i]}</button>`).join('');
   $('#rs').max = $('#re').max = N - 1;
   $('#years').innerHTML = meta.months.map((mo, i) => mo.endsWith('-01') && +mo.slice(0, 4) % 2 === 0 ? `<span style="left:${i / (N - 1) * 100}%">${mo.slice(0, 4)}</span>` : '').join('');
   // Open on the last 12 months fully covered by the Housing Database (its cutoff month is partial).
   const last = meta.hdbPermitCutoff ? meta.months.indexOf(meta.hdbPermitCutoff.slice(0, 7)) - 1 : N - 1;
   state.s = last - 11; state.e = last;
   $('#notes').innerHTML = `<p>Source: NYC DCP Housing Database ${meta.hdbVersion} (new buildings${meta.includeAlterations ? ' and unit-adding alterations' : ''}; withdrawn jobs excluded). Units are net new Class A units. Permitted by first permit date, completed by first certificate of occupancy.</p>` +
-    `<p>Building type is set by the finished building's unit count: houses (1–2 units), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's own building-class fields are blank or "Other" for too many new buildings to use.</p>` +
+    `<p>Project tooltips show building type, set by the finished building's unit count: houses (1–2 units), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's own building-class fields are blank or "Other" for too many new buildings to use.</p>` +
     (meta.provisionalFrom ? `<p>From ${mLabel(meta.provisionalFrom)} on, permits come from DOB NOW new-building filings not yet in the Housing Database (one record per job, earliest permit). Completions stop at ${meta.hdbCompleteCutoff}, so in-progress counts after that date run high.</p>` : '') +
     (meta.staleYears ? `<p>"In progress" = permitted and not yet complete at the end of the range; jobs still open ${meta.staleYears} years after their permit are treated as abandoned.</p>` : '') +
     `<p>The 2015 and 2022 spikes are filings rushed in before the 421-a tax break expired. Color breaks are computed over every window of the selected length, so sliding or playing the window stays comparable.</p>`;
@@ -428,7 +465,7 @@ async function main() {
     const NEVER = projects.never, when = i => i >= 0 && i < NEVER ? mLabel(meta.months[i]) : i < 0 ? 'before 2010' : null;
     // One handler so a project under the cursor wins over the neighborhood beneath it.
     map.on('mousemove', e => {
-      const hit = map.queryRenderedFeatures(e.point, { layers: state.markers === 'on' ? ['proj', 'nta-fill'] : ['nta-fill'] });
+      const hit = map.queryRenderedFeatures(e.point, { layers: ['proj', 'nta-fill'] });
       const pr = hit.find(f => f.layer.id === 'proj'), n = hit.find(f => f.layer.id === 'nta-fill');
       map.getCanvas().style.cursor = pr || n ? 'pointer' : '';
       if (pr) {
@@ -446,17 +483,16 @@ async function main() {
     refresh();
   });
 
-  seg('#metric', 'metric'); seg('#flow', 'flow'); seg('#scale', 'scale'); seg('#markers', 'markers');
-  $('#types').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    const t = +b.dataset.t, on = state.types.includes(t);
-    if (on && state.types.length === 1) return; // keep at least one type selected
-    state.types = on ? state.types.filter(x => x !== t) : [...state.types, t].sort();
-    b.setAttribute('aria-pressed', !on);
-    buildSeries(); refresh();
-  });
-  $('#boro').addEventListener('change', e => { state.boro = e.target.value; fitBoro(); refresh(); });
-  $('#boros').addEventListener('click', e => { const b = e.target.closest('.boro'); if (!b) return; state.boro = state.boro === b.dataset.b ? '' : b.dataset.b; $('#boro').value = state.boro; fitBoro(); refresh(); });
+  seg('#metric', 'metric'); seg('#flow', 'flow');
+  const setBoro = b => {
+    state.boro = b; $('#boro').value = b;
+    // Neighborhoods outside the new borough drop out of the selection.
+    if (b) for (const n of [...state.ntas]) if (ntaInfo[n].boro !== b) state.ntas.delete(n);
+    renderNtaList(); fitView(); refresh();
+  };
+  $('#boro').addEventListener('change', e => setBoro(e.target.value));
+  $('#boros').addEventListener('click', e => { const b = e.target.closest('.boro'); if (b) setBoro(state.boro === b.dataset.b ? '' : b.dataset.b); });
+  setupNtaPicker();
   $('#rs').addEventListener('input', e => setRange(Math.min(+e.target.value, state.e), state.e));
   $('#re').addEventListener('input', e => setRange(state.s, Math.max(+e.target.value, state.flow === 'i' ? 0 : state.s)));
   $('#play').addEventListener('click', play);

@@ -187,7 +187,7 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
 
 
 def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
-    """Return {nta: {building type index: {pj, pu, cj, cu, ij, iu}}} arrays aligned to `months`.
+    """Return {nta: {pj, pu, cj, cu, ij, iu}} arrays aligned to `months`.
 
     All-zero arrays are omitted to keep the file small; the front end treats a missing key as zeros.
     """
@@ -198,7 +198,7 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
     jobs["cm"] = jobs.complete.dt.to_period("M")
 
     out: dict[str, dict[str, list]] = {}
-    for (nta, btype), g in jobs.groupby(["nta2020", "btype"]):
+    for nta, g in jobs.groupby("nta2020"):
         s = {k: np.zeros(n) for k in ("pj", "pu", "cj", "cu", "ij", "iu")}
         for flow, col in (("p", "pm"), ("c", "cm")):
             sub = g[g[col].notna() & (g[col] >= months[0]) & (g[col] <= months[-1])]
@@ -229,14 +229,14 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
         s["iu"] = np.cumsum(du)[:n]
         arrs = {k: [int(round(x)) for x in v] for k, v in s.items() if v.any()}
         if arrs:
-            out.setdefault(nta, {})[str(btype)] = arrs
+            out[nta] = arrs
     return out
 
 
 def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | None) -> dict:
     """One row per job with month indices so the front end can filter by month with no joins.
 
-    Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index]: p = permit month, c = completion
+    Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index, nta]: p = permit month, c = completion
     month, e = month the job leaves "in progress" (completion or staleness), all as offsets from
     months[0], with NEVER meaning never. A job is in progress at t when p <= t < e, matching
     `aggregate`. flags: "a" = alteration, "d" = from DOB NOW.
@@ -252,7 +252,7 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
             continue  # filed or approved only: never permitted, so never on the map
         e = c if p == never or stale_years is None else min(c, p + 12 * stale_years)
         flags = ("a" if r.job_type == "Alteration" else "") + ("d" if r.source == "dobnow" else "")
-        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype)])
+        rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype), r.nta2020])
     # Big projects last so they draw on top of the small ones around them.
     rows.sort(key=lambda row: row[2])
     return {"never": never, "boros": [BORO_FROM_NTA[k] for k in BORO_FROM_NTA], "rows": rows}
@@ -316,7 +316,7 @@ def main() -> None:
     )
     (OUT / "series.json").write_text(json.dumps(series, separators=(",", ":")))
     (OUT / "meta.json").write_text(json.dumps(meta, indent=2))
-    tot = {k: sum(sum(t.get(k, [])) for v in series.values() for t in v.values()) for k in ("pj", "pu", "cj", "cu")}
+    tot = {k: sum(sum(v.get(k, [])) for v in series.values()) for k in ("pj", "pu", "cj", "cu")}
     print(f"Wrote {len(series)} NTAs x {len(months)} months. Totals: {tot}. Unplaced jobs: {len(unplaced)}", file=sys.stderr)
 
 
