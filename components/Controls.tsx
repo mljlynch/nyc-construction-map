@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import type { Filters, Measure, Stage } from '@/lib/filters';
+import type { BuildType, Filters, Measure, Stage } from '@/lib/filters';
 import type { NeighborhoodInfo } from '@/lib/types';
 
-function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void }) {
+function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string, string?][]; onChange: (v: T) => void }) {
   return (
     <div className="seg" role="group" aria-label={label}>
-      {options.map(([v, text]) => (
-        <button key={v} aria-pressed={value === v} onClick={() => onChange(v)}>{text}</button>
+      {options.map(([v, text, title]) => (
+        <button key={v} aria-pressed={value === v} title={title} onClick={() => onChange(v)}>{text}</button>
       ))}
     </div>
   );
@@ -88,6 +88,15 @@ export function Controls({ filters, boroughs, neighborhoods, shareUrl, onChange,
       <h1>NYC Housing Map</h1>
       <Segmented<Measure> label="Measure" value={filters.measure} options={[['units', 'Units'], ['buildings', 'Buildings']]} onChange={measure => onChange({ measure })} />
       <Segmented<Stage> label="Stage" value={filters.stage} options={[['completed', 'Completed'], ['permitted', 'Permitted']]} onChange={stage => onChange({ stage })} />
+      <Segmented<BuildType>
+        label="Project type"
+        value={filters.type}
+        options={[
+          ['new', 'New buildings', 'Only newly constructed buildings'],
+          ['all', 'Include alterations', 'Also count renovations that add homes: conversions, added units and enlargements'],
+        ]}
+        onChange={type => onChange({ type })}
+      />
       <CopyLink shareUrl={shareUrl} />
       <Link className="share about-link" href="/about">About</Link>
       <label>

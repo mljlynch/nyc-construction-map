@@ -8,12 +8,12 @@ export interface Meta {
   hdbPermitCutoff: string;
   hdbCompleteCutoff: string;
   provisionalFrom: string | null;
-  includeAlterations: boolean;
   staleYears: number | null;
   dataEnd: string;
   projectedFrom: string;
   estimateTrainYears: [number, number];
   estimateMedians: Record<string, number>;
+  alterationMedians: Record<string, number>;
 }
 
 export interface NeighborhoodInfo {

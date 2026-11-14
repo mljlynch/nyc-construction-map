@@ -4,10 +4,12 @@
 
 export type Measure = 'units' | 'buildings';
 export type Stage = 'completed' | 'permitted';
+export type BuildType = 'new' | 'all'; // new buildings only, or also alterations that add units
 
 export interface Filters {
   measure: Measure;
   stage: Stage;
+  type: BuildType;
   from: string; // YYYY-MM
   to: string; // YYYY-MM
   borough: string | null;
@@ -28,7 +30,7 @@ export interface FilterContext {
 export const STAGES: Stage[] = ['completed', 'permitted'];
 
 export function defaultFilters(ctx: FilterContext): Filters {
-  return { measure: 'units', stage: 'completed', from: ctx.defaultFrom, to: ctx.defaultTo, borough: null, neighborhoods: [], selected: null };
+  return { measure: 'units', stage: 'completed', type: 'new', from: ctx.defaultFrom, to: ctx.defaultTo, borough: null, neighborhoods: [], selected: null };
 }
 
 type ParamSource = URLSearchParams | Record<string, string | string[] | undefined>;
@@ -46,6 +48,7 @@ export function parseFilters(src: ParamSource, ctx: FilterContext): Filters {
   const get = getter(src);
   const f = defaultFilters(ctx);
   if (get('measure') === 'buildings') f.measure = 'buildings';
+  if (get('type') === 'all') f.type = 'all';
   const stage = get('stage');
   if (stage && (STAGES as string[]).includes(stage)) f.stage = stage as Stage;
 
@@ -76,6 +79,7 @@ export function toSearchParams(f: Filters, ctx: FilterContext, full = false): UR
   const rangeChanged = f.from !== ctx.defaultFrom || f.to !== ctx.defaultTo;
   if (full || f.measure !== 'units') q.set('measure', f.measure);
   if (full || f.stage !== 'completed') q.set('stage', f.stage);
+  if (full || f.type !== 'new') q.set('type', f.type);
   if (full || rangeChanged) { q.set('from', f.from); q.set('to', f.to); }
   if (f.borough) q.set('borough', f.borough);
   if (f.neighborhoods.length) q.set('neighborhoods', [...f.neighborhoods].sort().join(','));

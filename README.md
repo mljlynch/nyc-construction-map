@@ -6,7 +6,6 @@ Live at **https://nychousingmap.com** (Vercel; every push to `main` deploys).
 
 ```bash
 uv run pipeline/build_data.py                 # new buildings + DOB NOW freshness layer
-uv run pipeline/build_data.py --include-alterations   # also unit-adding alterations
 uv run pipeline/build_data.py --stale-years 0 # never treat long-open jobs as abandoned
 uv run pipeline/build_data.py --refresh       # re-download (API responses cache in pipeline/.cache)
 npm install && npm run dev                    # Next.js dev server at http://localhost:3000
@@ -53,7 +52,7 @@ A Next.js (App Router) app on Vercel.
 - **Building type** is set by the finished building's unit count (`classaprop`, or proposed dwelling units for DOB NOW jobs): houses (1–2), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's `bldg_class` and `occ_prop` are blank or "Other" for too many new buildings to use. It appears in project tooltips.
 - The Neighborhoods menu limits the map, markers, totals and chart to the chosen NTAs (combined in the side panel).
 - The time slider selects a start and end month. Both stages show totals over that range. It opens on the last 12 months of actual completions.
-- Withdrawn jobs are excluded. With `--include-alterations`, only alterations that add units count.
+- Withdrawn jobs are excluded. The pipeline writes new buildings (`n`) and alterations that add units (`a`) as separate series per NTA; the site's **New buildings / Include alterations** toggle (`?type=all`) picks one or both. Alterations get their own completion-time model. DOB NOW freshness covers new buildings only.
 - DOB NOW jobs are deduplicated to one per job number (the part of `job_filing_number` before `-`), using the earliest permit date. They are dropped if HDB already has an NB job on the same BIN, because the two systems use different job numbers.
 - The timeline starts in 2010 because HDB only covers jobs completed in 2010 or later.
 - Months after the HDB permit cutoff are marked provisional for permits.

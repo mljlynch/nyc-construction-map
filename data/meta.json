@@ -239,7 +239,6 @@
   "hdbPermitCutoff": "2026-08-04",
   "hdbCompleteCutoff": "2026-07-02",
   "provisionalFrom": "2026-08",
-  "includeAlterations": false,
   "staleYears": 8,
   "dataEnd": "2026-11",
   "projectedFrom": "2026-07",
@@ -253,8 +252,14 @@
     "Mid-size apartments (10\u201349)": 33,
     "Large apartments (50+)": 33
   },
-  "unplacedJobs": 5,
-  "unplacedUnits": 10,
+  "alterationMedians": {
+    "Houses (1\u20132 units)": 16,
+    "Small multifamily (3\u20139)": 26,
+    "Mid-size apartments (10\u201349)": 27,
+    "Large apartments (50+)": 25
+  },
+  "unplacedJobs": 6,
+  "unplacedUnits": 11,
   "boros": [
     "Manhattan",
     "Bronx",

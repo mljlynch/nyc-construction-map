@@ -43,6 +43,8 @@ BOROS = {"1": "Manhattan", "2": "Bronx", "3": "Brooklyn", "4": "Queens", "5": "S
 # so type is derived from the finished building's unit count, which every job has.
 BUILDING_TYPES = ["Houses (1–2 units)", "Small multifamily (3–9)", "Mid-size apartments (10–49)", "Large apartments (50+)"]
 SIZE_BINS = [-np.inf, 2, 9, 49, np.inf]
+# Job kinds, written as separate series so the map can show new buildings alone or with alterations.
+KINDS = ("n", "a")  # new building, alteration that adds units
 # Permit cohort used to learn typical permit-to-completion times. These years are old enough that
 # 92-97% of their jobs have finished, so the durations aren't biased toward fast jobs.
 TRAIN_YEARS = (2014, 2019)
@@ -102,20 +104,19 @@ def load_ntas() -> tuple[list[dict], STRtree, list[str]]:
     return feats, STRtree(geoms), codes
 
 
-def load_hdb(include_alterations: bool) -> pd.DataFrame:
-    types = ["'New Building'"] + (["'Alteration'"] if include_alterations else [])
+def load_hdb() -> pd.DataFrame:
+    """New buildings plus alterations that add units (the map can show either set)."""
     df = soda(
         HDB_ID,
         select="job_number,job_type,job_status,classanet,classaprop,boro,bin,datepermit,datecomplt,nta2020,version,"
         "latitude,longitude,addressnum,addressst",
-        where=f"job_type in ({','.join(types)}) AND job_status != '9. Withdrawn'",
+        where="job_type in ('New Building','Alteration') AND job_status != '9. Withdrawn'",
         order="job_number",
     )
     df["units"] = pd.to_numeric(df["classanet"], errors="coerce").fillna(0)
     df["size"] = pd.to_numeric(df["classaprop"], errors="coerce").fillna(df.units)
     # Alterations that remove units net out negative; for a construction map we only count additions.
-    if include_alterations:
-        df = df[(df.job_type == "New Building") | (df.units > 0)]
+    df = df[(df.job_type == "New Building") | (df.units > 0)]
     df["permit"] = pd.to_datetime(df["datepermit"], errors="coerce")
     df["complete"] = pd.to_datetime(df["datecomplt"], errors="coerce")
     # "Completed" means a first CO was issued; HDB sets datecomplt only for those.
@@ -191,14 +192,18 @@ def load_dob_now(hdb: pd.DataFrame, after: pd.Timestamp, ntree: STRtree, ncodes:
     return jobs[JOB_COLS]
 
 
-def duration_model(jobs: pd.DataFrame) -> dict[int, np.ndarray]:
-    """Sorted permit-to-completion durations (months) per building type, from the training cohort."""
+def duration_model(jobs: pd.DataFrame) -> dict[tuple[str, int], np.ndarray]:
+    """Sorted permit-to-completion durations (months) per (kind, building type), from the training
+    cohort. New buildings and alterations are modeled separately; they take different lengths of time."""
     pm = jobs.permit.dt.to_period("M")
     done = jobs.complete.notna() & pm.notna()
     dur = (jobs.complete.dt.to_period("M") - pm)[done].map(lambda d: d.n)
     train = done & jobs.permit.dt.year.between(*TRAIN_YEARS) & (jobs.source == "hdb")
-    dist = {t: np.sort(dur[train & (jobs.btype == t)].to_numpy()) for t in range(len(BUILDING_TYPES))}
-    return {t: d[d >= 0] for t, d in dist.items()}
+    dist = {
+        (k, t): np.sort(dur[train & (jobs.kind == k) & (jobs.btype == t)].to_numpy())
+        for k in KINDS for t in range(len(BUILDING_TYPES))
+    }
+    return {key: d[d >= 0] for key, d in dist.items()}
 
 
 def remaining(dist: np.ndarray, elapsed: int, stale_months: int | None) -> np.ndarray | None:
@@ -228,7 +233,7 @@ def estimate_completions(jobs: pd.DataFrame, dist: dict, last_actual: pd.Period,
     out["est_lo"] = out["est_hi"] = out["est"]
     open_ = pm.notna() & jobs.complete.isna()
     for i in jobs.index[open_]:
-        cand = remaining(dist[jobs.btype[i]], (last_actual - pm[i]).n, stale_months)
+        cand = remaining(dist[(jobs.kind[i], jobs.btype[i])], (last_actual - pm[i]).n, stale_months)
         if cand is None:
             continue
         finishing = cand if stale_months is None else cand[cand < stale_months]
@@ -273,12 +278,12 @@ def aggregate(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int | Non
         # Difference arrays: +1 at permit month, -1 at the exit month (completion or staleness).
         ip = g[g.pm.notna()]
         dj, du = np.zeros(n + 1), np.zeros(n + 1)
-        for pm, cm, bt, u in zip(ip.pm, ip.cm, ip.btype, ip.units):
+        for pm, cm, kind, bt, u in zip(ip.pm, ip.cm, ip.kind, ip.btype, ip.units):
             start = max(pm, months[0])
             if start > months[-1]:
                 continue
             a = idx[start]
-            cand = None if pd.notna(cm) else remaining(dist[bt], (last_actual - pm).n, stale_months)
+            cand = None if pd.notna(cm) else remaining(dist[(kind, bt)], (last_actual - pm).n, stale_months)
             if cand is not None:
                 # Open at last_actual with a usable model: certain until then, expected after.
                 b = la + 1
@@ -347,7 +352,6 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--include-alterations", action="store_true", help="also count Alteration jobs that add units")
     ap.add_argument("--no-dob-now", action="store_true", help="skip the DOB NOW freshness layer")
     ap.add_argument(
         "--stale-years",
@@ -367,7 +371,7 @@ def main() -> None:
     print("Loading NTAs…", file=sys.stderr)
     feats, ntree, ncodes = load_ntas()
     print("Loading Housing Database…", file=sys.stderr)
-    hdb = load_hdb(args.include_alterations)
+    hdb = load_hdb()
     hdb_version = hdb.attrs["version"]
     hdb_cutoff = hdb.permit.max()
     jobs = [hdb]
@@ -376,17 +380,22 @@ def main() -> None:
         jobs.append(load_dob_now(hdb, hdb_cutoff, ntree, ncodes))
     jobs = pd.concat(jobs, ignore_index=True)
     jobs["btype"] = pd.cut(jobs["size"], SIZE_BINS, labels=False).astype(int)
+    jobs["kind"] = np.where(jobs.job_type == "Alteration", "a", "n")
 
     # Last month with complete completion data: HDB's cutoff month is usually partial (e.g. July 2).
     last_actual = (hdb.complete.max() + pd.Timedelta(days=1)).to_period("M") - 1
     dist = duration_model(jobs)
-    medians = {BUILDING_TYPES[t]: int(np.median(d)) for t, d in dist.items() if len(d)}
+    medians = {kind: {BUILDING_TYPES[t]: int(np.median(d)) for (k, t), d in dist.items() if k == kind and len(d)} for kind in KINDS}
     jobs[["est", "est_lo", "est_hi"]] = estimate_completions(jobs, dist, last_actual, args.stale_years or None)
     data_end = max(jobs.permit.max(), jobs.complete.max()).to_period("M")
     # Expected completions taper off for years; stop the axis once most projected units are in.
     end = max(data_end, last_actual + HORIZON_MONTHS)
     months = pd.period_range(START_MONTH, end, freq="M")
-    series = aggregate(jobs, months, args.stale_years or None, dist, last_actual)
+    # {nta: {"n": {...}, "a": {...}}}: one set of monthly arrays per kind.
+    series: dict[str, dict] = {}
+    for kind in KINDS:
+        for nta, arrs in aggregate(jobs[jobs.kind == kind], months, args.stale_years or None, dist, last_actual).items():
+            series.setdefault(nta, {})[kind] = arrs
 
     # Borough totals are summed client-side from NTA series, so jobs without an NTA would vanish.
     unplaced = jobs[jobs.nta2020.isna()]
@@ -396,12 +405,12 @@ def main() -> None:
         "hdbPermitCutoff": str(hdb_cutoff.date()),
         "hdbCompleteCutoff": str(hdb.complete.max().date()),
         "provisionalFrom": None if args.no_dob_now else str((hdb_cutoff + pd.Timedelta(days=1)).to_period("M")),
-        "includeAlterations": args.include_alterations,
         "staleYears": args.stale_years or None,
         "dataEnd": str(data_end),
         "projectedFrom": str(last_actual + 1),
         "estimateTrainYears": list(TRAIN_YEARS),
-        "estimateMedians": medians,
+        "estimateMedians": medians["n"],
+        "alterationMedians": medians["a"],
         "unplacedJobs": int(len(unplaced)),
         "unplacedUnits": int(unplaced.units.sum()),
         "boros": list(BOROS.values()),
@@ -414,7 +423,7 @@ def main() -> None:
     )
     (OUT / "series.json").write_text(json.dumps(series, separators=(",", ":")))
     (OUT / "meta.json").write_text(json.dumps(meta, indent=2))
-    tot = {k: sum(sum(v.get(k, [])) for v in series.values()) for k in ("pj", "pu", "cj", "cu")}
+    tot = {kind: {k: sum(sum(v.get(kind, {}).get(k, [])) for v in series.values()) for k in ("pu", "cu")} for kind in KINDS}
     print(f"Wrote {len(series)} NTAs x {len(months)} months. Totals: {tot}. Unplaced jobs: {len(unplaced)}", file=sys.stderr)
 
 

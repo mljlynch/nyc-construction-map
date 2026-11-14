@@ -20,7 +20,9 @@ const SOURCES = [
 export default async function About() {
   const { meta } = await getContext();
   const lastActual = meta.months[meta.months.indexOf(meta.projectedFrom) - 1];
-  const medians = Object.entries(meta.estimateMedians).map(([t, m]) => `${t.split(' (')[0].toLowerCase()} ${m} months`);
+  const medianText = (m: Record<string, number>) => Object.entries(m).map(([t, n]) => `${t.split(' (')[0].toLowerCase()} ${n} months`);
+  const medians = medianText(meta.estimateMedians);
+  const alterationMedians = medianText(meta.alterationMedians);
   return (
     <main className="about">
       <Link className="back" href="/">← Back to the map</Link>
@@ -47,7 +49,11 @@ export default async function About() {
 
       <h2>What&apos;s counted</h2>
       <ul>
-        <li>New buildings{meta.includeAlterations ? ' and alterations that add units' : ''}. Withdrawn jobs are left out.</li>
+        <li>
+          <strong>New buildings</strong> by default. <strong>Include alterations</strong> also counts renovations that add homes to an existing
+          building: conversions (for example office to residential), splitting or adding apartments, and enlargements. Renovations that don&apos;t
+          change the number of homes aren&apos;t in the data. Withdrawn jobs are left out.
+        </li>
         <li><strong>Units</strong> are net new homes (Class A units). <strong>Buildings</strong> counts each job once.</li>
         <li><strong>Completed</strong> uses the first certificate of occupancy. <strong>Permitted</strong> uses the first permit date. Both show totals for the months selected on the slider.</li>
         <li>
@@ -56,7 +62,7 @@ export default async function About() {
           buildings to use.
         </li>
         {meta.provisionalFrom && (
-          <li>From {monthLabel(meta.provisionalFrom)} on, permits come from DOB NOW new-building filings that aren&apos;t in the Housing Database yet, so they&apos;re marked provisional.</li>
+          <li>From {monthLabel(meta.provisionalFrom)} on, permits come from DOB NOW new-building filings that aren&apos;t in the Housing Database yet, so they&apos;re marked provisional. Alterations after that date aren&apos;t included yet.</li>
         )}
       </ul>
 
@@ -65,7 +71,8 @@ export default async function About() {
         None of the sources include an expected completion date, so completions after {monthLabel(lastActual)} are estimated. For each permitted
         project that hasn&apos;t finished, the chance it finishes in a given month comes from how long similar buildings permitted in{' '}
         {meta.estimateTrainYears.join('–')} took, counting only those that were still unfinished at the same age. Typical totals from permit to
-        completion: {medians.join(', ')}.
+        completion for new buildings: {medians.join(', ')}. Alterations are modeled the same way from past alterations, which finish sooner
+        ({alterationMedians.join(', ')}).
       </p>
       <ul>
         <li>Map and borough numbers are expected values, so they can be fractional.</li>
