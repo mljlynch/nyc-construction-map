@@ -23,6 +23,20 @@
 <meta name="twitter:description" content="Where New York is building homes: units permitted, completed and underway in every neighborhood since 2010, with estimates through 2029.">
 <meta name="twitter:image" content="https://nychousingmap.com/og.jpg">
 <meta name="twitter:image:alt" content="Lower Manhattan skyline at dusk with the title NYC Housing Map">
+<script>
+  // Vercel Web Analytics. Filter changes rewrite the URL (replaceState); only the first pageview
+  // per load is sent, so they don't count as extra visits. That first one keeps its query string,
+  // so shared links show up with the view they pointed at.
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  let vaSent = false;
+  window.va('beforeSend', event => {
+    if (event.type !== 'pageview') return event;
+    if (vaSent) return null;
+    vaSent = true;
+    return event;
+  });
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -97,6 +111,8 @@ aside h2:first-child { margin-top: 0; }
 .range input:disabled::-moz-range-thumb { visibility: hidden; }
 .range .years { position: absolute; left: 8px; right: 8px; top: 24px; height: 12px; font-size: 10px; color: var(--text-muted); }
 .range .years span { position: absolute; transform: translateX(-50%); }
+.share { font: inherit; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); cursor: pointer; order: 10; }
+.share.done { border-color: var(--accent); color: var(--accent); }
 .ms { position: relative; }
 #msBtn { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); cursor: pointer; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-panel { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; width: 300px; max-width: calc(100vw - 32px); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
@@ -159,6 +175,7 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
     <div class="seg" id="flow" role="group" aria-label="Stage">
       <button data-v="p" aria-pressed="true">Permitted</button><button data-v="c">Completed</button><button data-v="i">In progress</button>
     </div>
+    <button id="share" class="share" title="Copy a link to this view">Copy link</button>
     <label>Borough <select id="boro"><option value="">All boroughs</option></select></label>
     <div class="ms" id="ms">
       <button id="msBtn" aria-haspopup="true" aria-expanded="false"><span id="msLabel">All neighborhoods</span> ▾</button>
@@ -462,7 +479,7 @@ function setRange(s, e) {
   $('#est').hidden = !(projectedIn() || pastData());
   $('#est').textContent = projectedIn() ? 'Includes estimates' : `No permit data after ${mLabel(meta.dataEnd)}`;
   computeBreaks(); legend(); // the legend title carries the range, so redraw it every time
-  paint(); boroPanel(); nbhdPanel();
+  paint(); boroPanel(); nbhdPanel(); writeUrl();
 }
 
 function refresh() {
@@ -517,6 +534,55 @@ function setupNtaPicker() {
   renderNtaList();
 }
 
+// Filters live in the query string so a view can be shared. Defaults are left out to keep links short.
+const STAGES = { p: 'permitted', c: 'completed', i: 'in-progress' };
+let defaultRange, urlTimer;
+function writeUrl() {
+  clearTimeout(urlTimer);
+  urlTimer = setTimeout(() => {
+    const q = new URLSearchParams();
+    if (state.metric === 'j') q.set('measure', 'buildings');
+    if (state.flow !== 'p') q.set('stage', STAGES[state.flow]);
+    if (state.flow !== 'i' && (state.s !== defaultRange[0] || state.e !== defaultRange[1])) q.set('from', meta.months[state.s]);
+    if (state.e !== defaultRange[1] || (state.flow !== 'i' && state.s !== defaultRange[0])) q.set('to', meta.months[state.e]);
+    if (state.boro) q.set('borough', state.boro);
+    if (state.ntas.size) q.set('neighborhoods', [...state.ntas].join(','));
+    if (state.sel) q.set('selected', state.sel);
+    const qs = q.toString().replace(/%2C/g, ',');
+    history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+  }, 250);
+}
+// Reads the query string into state; anything unrecognized is ignored. Returns whether the view
+// is narrowed to a borough or neighborhoods (so the map should zoom to it).
+function readUrl() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('measure') === 'buildings') state.metric = 'j';
+  const stage = Object.entries(STAGES).find(([, v]) => v === q.get('stage'));
+  if (stage) state.flow = stage[0];
+  const idx = m => meta.months.indexOf(m);
+  const to = idx(q.get('to')), from = idx(q.get('from'));
+  if (to >= 0) state.e = to;
+  if (from >= 0) state.s = from;
+  else if (to >= 0) state.s = Math.max(0, to - (defaultRange[1] - defaultRange[0]));
+  if (state.s > state.e) [state.s, state.e] = [state.e, state.s];
+  if (meta.boros.includes(q.get('borough'))) state.boro = q.get('borough');
+  for (const n of (q.get('neighborhoods') || '').split(',')) if (series[n] && (!state.boro || ntaInfo[n].boro === state.boro)) state.ntas.add(n);
+  if (ntaInfo[q.get('selected')]) state.sel = q.get('selected');
+  for (const [id, v] of [['#metric', state.metric], ['#flow', state.flow]])
+    $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+  $('#boro').value = state.boro;
+  return !!(state.boro || state.ntas.size);
+}
+async function copyLink() {
+  clearTimeout(urlTimer);
+  writeUrl(); // flush any pending change before copying
+  await new Promise(r => setTimeout(r, 260));
+  try { await navigator.clipboard.writeText(location.href); }
+  catch { prompt('Copy this link:', location.href); return; }
+  const b = $('#share'); b.textContent = 'Copied!'; b.classList.add('done');
+  setTimeout(() => { b.textContent = 'Copy link'; b.classList.remove('done'); }, 1600);
+}
+
 async function main() {
   try {
     [meta, series, geo, projects] = await Promise.all(['/api/meta', '/api/series', '/api/neighborhoods', '/api/projects'].map(async u => {
@@ -543,12 +609,14 @@ async function main() {
   // Open on the last 12 months fully covered by the Housing Database (its cutoff month is partial).
   const last = meta.hdbPermitCutoff ? meta.months.indexOf(meta.hdbPermitCutoff.slice(0, 7)) - 1 : N - 1;
   state.s = last - 11; state.e = last;
+  defaultRange = [state.s, state.e];
+  const zoomToFilters = readUrl();
   $('#notes').innerHTML = `<p>Source: NYC DCP Housing Database ${meta.hdbVersion} (new buildings${meta.includeAlterations ? ' and unit-adding alterations' : ''}; withdrawn jobs excluded). Units are net new Class A units. Permitted by first permit date, completed by first certificate of occupancy.</p>` +
     `<p>Project tooltips show building type, set by the finished building's unit count: houses (1–2 units), small multifamily (3–9), mid-size apartments (10–49), large apartments (50+). DOB's own building-class fields are blank or "Other" for too many new buildings to use.</p>` +
     (meta.provisionalFrom ? `<p>From ${mLabel(meta.provisionalFrom)} on, permits come from DOB NOW new-building filings not yet in the Housing Database (one record per job, earliest permit). </p>` : '') +
     `<p>Completions after ${mLabel(meta.months[meta.months.indexOf(meta.projectedFrom) - 1])} are estimates. For each permitted project not yet finished, the chance it finishes in a given month comes from how long similar buildings permitted in ${meta.estimateTrainYears.join('–')} took, counting only those that were still unfinished at the same age (typical totals: ${Object.entries(meta.estimateMedians).map(([t, m]) => `${t.split(' (')[0].toLowerCase()} ${m} mo`).join(', ')}). Map and borough numbers are expected values, so they can be fractional. Each unfinished project's marker is placed at a month drawn from its own estimate, so marker counts track the map without matching it exactly; tooltips show the likely range (middle 50%). They only cover projects already permitted, so future years undercount what will actually finish. Projects open longer than nearly all past examples get no estimate and stay in progress.</p>` +
     (meta.staleYears ? `<p>"In progress" = permitted and not yet complete at the end of the range; jobs still open ${meta.staleYears} years after their permit are treated as abandoned.</p>` : '') +
-    `<p>The 2015 and 2022 spikes are filings rushed in before the 421-a tax break expired. Color breaks are computed over every window of the selected length, so sliding or playing the window stays comparable.</p>`;
+    `<p>The 2015 and 2022 spikes are filings rushed in before the 421-a tax break expired. Unit colors use fixed thresholds; building counts use breaks computed over every window of the selected length, so sliding or playing the window stays comparable.</p>`;
 
   map = new maplibregl.Map({
     container: 'map',
@@ -585,7 +653,8 @@ async function main() {
     });
     map.on('mouseout', () => { $('#tip').style.display = 'none'; });
     map.on('zoomend', legend);
-    map.on('click', 'nta-fill', e => { state.sel = e.features[0].properties.nta; paint(); nbhdPanel(); });
+    map.on('click', 'nta-fill', e => { state.sel = e.features[0].properties.nta; paint(); nbhdPanel(); writeUrl(); });
+    if (zoomToFilters) map.once('idle', fitView);
     refresh();
   });
 
@@ -599,6 +668,7 @@ async function main() {
   $('#boro').addEventListener('change', e => setBoro(e.target.value));
   $('#boros').addEventListener('click', e => { const b = e.target.closest('.boro'); if (b) setBoro(state.boro === b.dataset.b ? '' : b.dataset.b); });
   setupNtaPicker();
+  $('#share').addEventListener('click', copyLink);
   $('#rs').addEventListener('input', e => setRange(Math.min(+e.target.value, state.e), state.e));
   $('#re').addEventListener('input', e => setRange(state.s, Math.max(+e.target.value, state.flow === 'i' ? 0 : state.s)));
   $('#play').addEventListener('click', play);

@@ -13,6 +13,11 @@ npm install && vercel dev                     # page + API at http://localhost:3
 npm run typecheck
 ```
 
+## Sharing and analytics
+
+- Filters are kept in the query string, e.g. `?measure=buildings&stage=completed&from=2015-01&to=2016-12&borough=Brooklyn&neighborhoods=BK0101,BK0203&selected=BK0101`. Defaults are omitted. The Copy link button copies the current view.
+- Vercel Web Analytics loads from `/_vercel/insights/script.js`. Only the first pageview per visit is sent, so filter changes don't count as extra pageviews.
+
 ## How it's served
 
 - `web/` is the static page (MapLibre, no build step).
