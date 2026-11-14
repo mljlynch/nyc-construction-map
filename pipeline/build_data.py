@@ -6,7 +6,7 @@
 
 Run with:  uv run pipeline/build_data.py [--include-alterations] [--no-dob-now]
 
-Outputs (in web/data/):
+Outputs (in data/, served by the API routes in api/):
   ntas.geojson   2020 NTA polygons (simplified), properties: nta, name, boro
   series.json    NTA x month arrays for permitted/completed/in-progress jobs+units
   meta.json      month axis, data vintages, options used
@@ -33,7 +33,7 @@ PERMITS_ID = "rbx6-tga4"  # DOB NOW: Build - Approved Permits
 NTA_ID = "9nt8-h7nd"  # 2020 Neighborhood Tabulation Areas
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "web" / "data"
+OUT = ROOT / "data"
 CACHE = ROOT / "pipeline" / ".cache"
 
 # HDB only records completions from 2010 on, so earlier months would be incomplete.

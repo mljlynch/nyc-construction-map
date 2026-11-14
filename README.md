@@ -9,8 +9,16 @@ uv run pipeline/build_data.py                 # new buildings + DOB NOW freshnes
 uv run pipeline/build_data.py --include-alterations   # also unit-adding alterations
 uv run pipeline/build_data.py --stale-years 0 # never age out unfinished jobs from "in progress"
 uv run pipeline/build_data.py --refresh       # re-download (API responses cache in pipeline/.cache)
-python3 -m http.server 8765 --directory web   # then open http://localhost:8765
+npm install && vercel dev                     # page + API at http://localhost:3000
+npm run typecheck
 ```
+
+## How it's served
+
+- `web/` is the static page (MapLibre, no build step).
+- `api/` holds Vercel Functions: `GET /api/meta`, `/api/series`, `/api/neighborhoods`, `/api/projects`. Responses are cached on Vercel's CDN for a day; a deploy clears that cache.
+- The routes read through `lib/store.ts`. Today that's `JsonFileStore`, which reads the pipeline's output in `data/` (bundled into each function via `vercel.json`). To move to a database, add another `DataStore` implementation (e.g. Postgres), have the pipeline write to it, and switch `getStore()`. The routes and the page stay the same.
+
 
 ## Data
 

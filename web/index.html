@@ -518,7 +518,17 @@ function setupNtaPicker() {
 }
 
 async function main() {
-  [meta, series, geo, projects] = await Promise.all(['data/meta.json', 'data/series.json', 'data/ntas.geojson', 'data/projects.json'].map(u => fetch(u).then(r => r.json())));
+  try {
+    [meta, series, geo, projects] = await Promise.all(['/api/meta', '/api/series', '/api/neighborhoods', '/api/projects'].map(async u => {
+      const r = await fetch(u);
+      if (!r.ok) throw new Error(`${u} returned ${r.status}`);
+      return r.json();
+    }));
+  } catch (err) {
+    console.error(err);
+    $('#map').innerHTML = '<p style="padding:16px">Couldn\'t load the map data. Please refresh to try again.</p>';
+    return;
+  }
   N = meta.months.length;
   NEVER = projects.never;
   for (const f of geo.features) ntaInfo[f.properties.nta] = f.properties;
