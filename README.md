@@ -1,6 +1,8 @@
 # NYC new residential construction map
 
-Static map of new building jobs by 2020 NTA and month (2010 to now). No backend.
+Static map of new building jobs by 2020 NTA and month (2010 to now, plus estimated completions). No backend.
+
+Live at **https://nychousingmap.com** (Vercel; every push to `main` deploys).
 
 ```bash
 uv run pipeline/build_data.py                 # new buildings + DOB NOW freshness layer
