@@ -18,14 +18,14 @@
     --surface-0: #121211; --surface-1: #1a1a19; --border: #33332f;
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
     --accent: #3987e5; --marker: #d95926; --zero: #2a2a27; --outline: #1a1a19; --provisional: #f0a04b;
-    --s1: #0d366b; --s2: #104281; --s3: #1c5cab; --s4: #2a78d6; --s5: #5598e7; --s6: #86b6ef; --s7: #cde2fb;
+    --s1: #cde2fb; --s2: #9ec5f4; --s3: #6da7ec; --s4: #3987e5; --s5: #256abf; --s6: #184f95; --s7: #0d366b;
   }
 }
 :root[data-theme="dark"] {
   --surface-0: #121211; --surface-1: #1a1a19; --border: #33332f;
   --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
   --accent: #3987e5; --marker: #d95926; --zero: #2a2a27; --outline: #1a1a19; --provisional: #f0a04b;
-  --s1: #0d366b; --s2: #104281; --s3: #1c5cab; --s4: #2a78d6; --s5: #5598e7; --s6: #86b6ef; --s7: #cde2fb;
+  --s1: #cde2fb; --s2: #9ec5f4; --s3: #6da7ec; --s4: #3987e5; --s5: #256abf; --s6: #184f95; --s7: #0d366b;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -44,22 +44,21 @@ aside { grid-row: 2 / 4; grid-column: 2; overflow-y: auto; background: var(--sur
 aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 18px 0 8px; font-weight: 600; }
 aside h2:first-child { margin-top: 0; }
 .timebar { grid-column: 1; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface-1); border-top: 1px solid var(--border); }
-.timebar input[type=range] { flex: 1; accent-color: var(--accent); }
+.timebar .step { width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 16px; line-height: 1; }
+.timebar .step:disabled { opacity: .35; cursor: not-allowed; }
+.timebar select { font-weight: 600; }
 #play { width: 34px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 13px; }
-#monthLabel { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 74px; }
 .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--provisional); color: var(--provisional); white-space: nowrap; }
 .legend { position: absolute; left: 12px; bottom: 12px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; z-index: 2; max-width: 300px; }
 .legend .title { color: var(--text-secondary); margin-bottom: 6px; font-size: 12px; }
-.legend .swatches { display: flex; gap: 2px; }
+.legend .lrows { display: grid; gap: 2px; font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.legend .lrow { display: flex; align-items: center; gap: 8px; }
+.legend .lsw { width: 22px; height: 12px; border-radius: 2px; }
 .legend .sw { flex: 1; height: 10px; min-width: 26px; }
-.legend .sw:first-child { border-radius: 3px 0 0 3px; } .legend .sw:last-child { border-radius: 0 3px 3px 0; }
-.legend .ticks { display: flex; gap: 2px; font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.legend .ticks span { flex: 1; min-width: 26px; }
-.legend .row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: var(--text-muted); }
 .legend .sizes { display: flex; align-items: flex-end; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted); }
 .legend .sizes div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .legend .dot { border-radius: 50%; background: var(--marker); opacity: .8; border: 1px solid var(--outline); }
-.legend .zero { width: 14px; height: 10px; background: var(--zero); border-radius: 2px; border: 1px solid var(--border); }
+.legend .zero { background: var(--zero); border: 1px solid var(--border); }
 .tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); font-size: 12px; z-index: 5; display: none; white-space: nowrap; }
 .tip b { font-variant-numeric: tabular-nums; }
 .boro { display: grid; grid-template-columns: 100px 1fr 64px; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; border-radius: 4px; }
@@ -119,8 +118,10 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
   </aside>
   <div class="timebar">
     <button id="play" aria-label="Play">▶</button>
-    <span id="monthLabel"></span>
-    <input id="slider" type="range" min="0" value="0" aria-label="Month">
+    <button class="step" id="prev" aria-label="Previous month">‹</button>
+    <select id="selMonth" aria-label="Month"></select>
+    <select id="selYear" aria-label="Year"></select>
+    <button class="step" id="next" aria-label="Next month">›</button>
     <span id="prov" class="badge" hidden>Provisional · DOB NOW</span>
   </div>
 </div>
@@ -163,11 +164,21 @@ function computeBreaks() {
   if (!vals.length) return [1, 2, 3, 4, 5, 6];
   if (state.scale === 'log') {
     const lo = Math.log10(Math.max(1, vals[0])), hi = Math.log10(vals[vals.length - 1]);
-    return Array.from({ length: n - 1 }, (_, i) => Math.round(10 ** (lo + (hi - lo) * (i + 1) / n)));
+    return niceBreaks(Array.from({ length: n - 1 }, (_, i) => 10 ** (lo + (hi - lo) * (i + 1) / n)));
   }
-  const q = Array.from({ length: n - 1 }, (_, i) => vals[Math.floor(vals.length * (i + 1) / n)]);
-  for (let i = 1; i < q.length; i++) if (q[i] <= q[i - 1]) q[i] = q[i - 1] + 1;
-  return q;
+  return niceBreaks(Array.from({ length: n - 1 }, (_, i) => vals[Math.floor(vals.length * (i + 1) / n)]));
+}
+// Snap raw breaks to round numbers (5, 10, 25, 50, 100, 250…) so the legend reads as clean ranges.
+const NICE = [];
+for (let d = 1; d <= 1e6; d *= 10) for (const f of [1, 1.5, 2, 2.5, 3, 5, 7.5]) if (f * d >= 2 && Number.isInteger(f * d)) NICE.push(f * d);
+function niceBreaks(raw) {
+  const out = [];
+  for (const r of raw) {
+    let i = NICE.reduce((best, v, j) => Math.abs(Math.log(v / r)) < Math.abs(Math.log(NICE[best] / r)) ? j : best, 0);
+    while (out.length && NICE[i] <= out[out.length - 1]) i++;
+    out.push(NICE[i]);
+  }
+  return out;
 }
 function classOf(v) { if (v <= 0) return 0; let c = 1; for (const b of breaks) if (v >= b) c++; return c; }
 
@@ -208,11 +219,14 @@ function paint() {
 }
 
 function legend() {
-  const sw = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7'].map(v => `<div class="sw" style="background:${css(v)}"></div>`).join('');
   const lows = [1, ...breaks];
-  const ticks = lows.map(b => `<span>${b >= 1000 ? (b / 1000).toFixed(b >= 10000 ? 0 : 1) + 'k' : fmt(b)}+</span>`).join('');
+  const rows = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7'].map((v, i) => {
+    const lo = lows[i], hi = lows[i + 1] - 1;
+    const range = i === lows.length - 1 ? `${fmt(lo)}+` : lo === hi ? fmt(lo) : `${fmt(lo)}–${fmt(hi)}`;
+    return `<div class="lrow"><span class="lsw" style="background:${css(v)}"></span>${range}</div>`;
+  }).reverse().join('');
   const what = `${METRIC[state.metric]} ${FLOW[state.flow]}${state.flow === 'i' ? ' (snapshot)' : state.mode === 'cum' ? ' since Jan 2010' : ' in month'}`;
-  $('#legend').innerHTML = `<div class="title">${what[0].toUpperCase() + what.slice(1)} · ${state.scale}</div><div class="swatches">${sw}</div><div class="ticks">${ticks}</div><div class="row"><span class="zero"></span>None</div>` +
+  $('#legend').innerHTML = `<div class="title">${what[0].toUpperCase() + what.slice(1)} · ${state.scale}</div><div class="lrows">${rows}<div class="lrow"><span class="lsw zero"></span>None</div></div>` +
     (state.markers === 'on' ? `<div class="sizes"><span>Project units</span>${[10, 100, 500].map(u => { const d = 2 * radiusAt(u, map.getZoom()); return `<div><span class="dot" style="width:${d}px;height:${d}px"></span>${u}</div>`; }).join('')}</div>` : '');
 }
 
@@ -289,9 +303,14 @@ function showTip(e, html) {
 }
 
 function setT(t) {
-  state.t = t; $('#slider').value = t;
+  state.t = t;
   const mo = meta.months[t];
-  $('#monthLabel').textContent = mLabel(mo);
+  $('#selYear').value = mo.slice(0, 4);
+  // Only offer months that exist in the selected year (the first and last years are partial).
+  const have = new Set(meta.months.filter(m => m.startsWith(mo.slice(0, 4))).map(m => +m.slice(5)));
+  $('#selMonth').querySelectorAll('option').forEach(o => o.disabled = !have.has(+o.value));
+  $('#selMonth').value = +mo.slice(5);
+  $('#prev').disabled = t === 0; $('#next').disabled = t === meta.months.length - 1;
   $('#prov').hidden = !(meta.provisionalFrom && mo >= meta.provisionalFrom);
   paint(); boroPanel(); nbhdPanel();
 }
@@ -325,7 +344,8 @@ async function main() {
   cum = {};
   for (const nta in series) { cum[nta] = {}; for (const k in series[nta]) { let a = 0; cum[nta][k] = series[nta][k].map(v => a += v); } }
   meta.boros.forEach(b => $('#boro').insertAdjacentHTML('beforeend', `<option>${b}</option>`));
-  $('#slider').max = meta.months.length - 1;
+  MONTHS.forEach((m, i) => $('#selMonth').insertAdjacentHTML('beforeend', `<option value="${i + 1}">${m}</option>`));
+  [...new Set(meta.months.map(m => m.slice(0, 4)))].forEach(y => $('#selYear').insertAdjacentHTML('beforeend', `<option>${y}</option>`));
   // Open on the last month fully covered by the Housing Database (its cutoff month is partial).
   state.t = meta.hdbPermitCutoff ? meta.months.indexOf(meta.hdbPermitCutoff.slice(0, 7)) - 1 : meta.months.length - 1;
   $('#notes').innerHTML = `<p>Source: NYC DCP Housing Database ${meta.hdbVersion} (new buildings${meta.includeAlterations ? ' and unit-adding alterations' : ''}; withdrawn jobs excluded). Units are net new Class A units. Permitted by first permit date, completed by first certificate of occupancy.</p>` +
@@ -375,7 +395,15 @@ async function main() {
   seg('#mode', 'mode'); seg('#scale', 'scale'); seg('#markers', 'markers');
   $('#boro').addEventListener('change', e => { state.boro = e.target.value; fitBoro(); refresh(true); });
   $('#boros').addEventListener('click', e => { const b = e.target.closest('.boro'); if (!b) return; state.boro = state.boro === b.dataset.b ? '' : b.dataset.b; $('#boro').value = state.boro; fitBoro(); refresh(true); });
-  $('#slider').addEventListener('input', e => setT(+e.target.value));
+  const pick = () => {
+    const y = $('#selYear').value, ym = meta.months.filter(m => m.startsWith(y));
+    const want = `${y}-${String($('#selMonth').value).padStart(2, '0')}`;
+    // Switching year onto a month that year lacks lands on that year's nearest month.
+    setT(meta.months.indexOf(meta.months.includes(want) ? want : want < ym[0] ? ym[0] : ym[ym.length - 1]));
+  };
+  $('#selMonth').addEventListener('change', pick); $('#selYear').addEventListener('change', pick);
+  $('#prev').addEventListener('click', () => setT(Math.max(0, state.t - 1)));
+  $('#next').addEventListener('click', () => setT(Math.min(meta.months.length - 1, state.t + 1)));
   $('#play').addEventListener('click', play);
   document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; if (e.key === ' ') { e.preventDefault(); play(); } if (e.key === 'ArrowRight') setT(Math.min(meta.months.length - 1, state.t + 1)); if (e.key === 'ArrowLeft') setT(Math.max(0, state.t - 1)); });
 }
