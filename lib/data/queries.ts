@@ -104,19 +104,13 @@ export async function choropleth(f: Filters): Promise<ChoroplethResponse> {
   const total = Object.values(totals).reduce((a, b) => a + b, 0);
   for (const b in totals) totals[b] = round1(totals[b]);
 
-  return { values, breaks: f.measure === 'units' ? UNIT_BREAKS : buildingBreaks(ix, v, f), totals, total: round1(total) };
+  return { values, breaks: f.measure === 'units' ? UNIT_BREAKS : buildingBreaks(ix, v), totals, total: round1(total) };
 }
 
-// Quantiles over every window of the current length, so colors stay comparable as the window
-// slides or plays.
-function buildingBreaks(ix: Index, v: ReturnType<typeof view>, f: Filters): number[] {
-  const N = ix.ctx.months.length;
-  const L = v.e - v.s + 1;
+// Quantiles of the current view's nonzero neighborhood values.
+function buildingBreaks(ix: Index, v: ReturnType<typeof view>): number[] {
   const vals: number[] = [];
-  for (const nta in ix.cur) if (v.inView(nta)) for (let i = 0; i + L <= N; i++) {
-    const x = v.valRange(nta, i, i + L - 1);
-    if (x > 0) vals.push(x);
-  }
+  for (const nta in ix.cur) if (v.inView(nta)) { const x = v.val(nta); if (x > 0) vals.push(x); }
   if (!vals.length) return [2, 3, 5, 10, 15, 20];
   vals.sort((a, b) => a - b);
   return niceBreaks(Array.from({ length: 6 }, (_, i) => vals[Math.floor((vals.length * (i + 1)) / 7)]));

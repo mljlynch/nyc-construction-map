@@ -6,14 +6,12 @@ import type { Meta } from '@/lib/types';
 import { pastData, projectedIn } from './MapView';
 
 // Two-handle month range slider.
-export function TimeBar({ meta, filters: f, s, e, playing, onRange, onTogglePlay }: {
+export function TimeBar({ meta, filters: f, s, e, onRange }: {
   meta: Meta;
   filters: Filters;
   s: number;
   e: number;
-  playing: boolean;
   onRange: (s: number, e: number) => void;
-  onTogglePlay: () => void;
 }) {
   const N = meta.months.length;
   const pct = (i: number) => (i / (N - 1)) * 100;
@@ -23,7 +21,6 @@ export function TimeBar({ meta, filters: f, s, e, playing, onRange, onTogglePlay
 
   return (
     <div className="timebar">
-      <button className="play" aria-label={playing ? 'Pause' : 'Play'} onClick={onTogglePlay}>{playing ? '❚❚' : '▶'}</button>
       <span className="range-label">{rangeText(f)}{months > 1 ? ` · ${months} mo` : ''}</span>
       <div className="range">
         <div className="track">

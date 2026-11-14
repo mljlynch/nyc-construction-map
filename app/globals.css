@@ -62,7 +62,6 @@ aside h2:first-child { margin-top: 0; }
 .ms-list label { display: flex; gap: 8px; align-items: center; padding: 3px 10px; cursor: pointer; }
 .ms-list label:hover { background: var(--surface-0); }
 .ms-list input { accent-color: var(--accent); }
-.play { width: 34px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 13px; }
 .badge.est { border-color: var(--accent); color: var(--accent); }
 .legend .lnote { margin-top: 6px; font-size: 11px; color: var(--accent); }
 .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--provisional); color: var(--provisional); white-space: nowrap; }

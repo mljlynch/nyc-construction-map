@@ -77,7 +77,7 @@ export default async function About() {
       <h2>Reading the map</h2>
       <ul>
         <li>The 2015 and 2022 spikes are filings rushed in before the 421-a tax break expired.</li>
-        <li>Unit colors use fixed thresholds. Building counts use breaks computed over every window of the selected length, so sliding or playing the window stays comparable.</li>
+        <li>Unit colors use fixed thresholds. Building counts use breaks based on the neighborhoods in view.</li>
         <li>Every view has its own link: change the filters and use Copy link to share exactly what you&apos;re looking at.</li>
       </ul>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isNarrowed, queryString, toSearchParams, type FilterContext, type Filters } from '@/lib/filters';
 import type { ChoroplethResponse, Meta, NeighborhoodInfo, ProjectsResponse, SeriesResponse } from '@/lib/types';
 import { BoroughTotals } from './BoroughTotals';
@@ -23,7 +23,6 @@ export interface Snapshot {
 
 const FETCH_DELAY = 120; // debounce while dragging the slider
 const URL_DELAY = 250;
-const PLAY_STEP = 140;
 
 async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
   const r = await fetch(url, { signal });
@@ -35,7 +34,6 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
   const [filters, setFilters] = useState(initialFilters);
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState(false);
-  const [playing, setPlaying] = useState(false);
   const months = meta.months;
   const N = months.length;
   const s = months.indexOf(filters.from), e = months.indexOf(filters.to);
@@ -65,9 +63,9 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
       } catch (err) {
         if (!ctrl.signal.aborted) { console.error(err); setError(true); }
       }
-    }, playing ? 0 : FETCH_DELAY);
+    }, FETCH_DELAY);
     return () => { clearTimeout(timer); ctrl.abort(); };
-  }, [filters, ctx, playing]);
+  }, [filters, ctx]);
 
   // Keep the filters in the address bar (without adding history entries) so the view can be shared.
   const shareUrl = useMemo(() => queryString(toSearchParams(filters, ctx)), [filters, ctx]);
@@ -75,36 +73,6 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
     const t = setTimeout(() => history.replaceState(history.state, '', shareUrl || location.pathname), URL_DELAY);
     return () => clearTimeout(t);
   }, [shareUrl]);
-
-  // Playback slides the window forward one month once the current month has rendered, so it never
-  // outruns the data.
-  useEffect(() => {
-    if (!playing || !snap || snap.filters !== filters) return;
-    if (e >= N - 1) { setPlaying(false); return; }
-    const t = setTimeout(() => setRange(s + 1, e + 1), PLAY_STEP);
-    return () => clearTimeout(t);
-  }, [playing, snap, filters, s, e, N, setRange]);
-
-  const togglePlay = useCallback(() => {
-    if (!playing && e >= N - 1) setRange(0, e - s); // restart from 2010 with the same window length
-    setPlaying(!playing);
-  }, [playing, e, s, N, setRange]);
-
-  // Space plays/pauses; arrow keys slide the window.
-  const keys = useRef({ s, e, togglePlay, setRange });
-  keys.current = { s, e, togglePlay, setRange };
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      const tag = (ev.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'BUTTON') return;
-      const k = keys.current;
-      if (ev.key === ' ') { ev.preventDefault(); k.togglePlay(); }
-      if (ev.key === 'ArrowRight' && k.e < N - 1) k.setRange(k.s + 1, k.e + 1);
-      if (ev.key === 'ArrowLeft' && k.s > 0) k.setRange(k.s - 1, k.e - 1);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [N]);
 
   const setBorough = useCallback((borough: string | null) => {
     // Neighborhoods outside the new borough drop out of the selection.
@@ -140,7 +108,7 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
         <NeighborhoodPanel meta={meta} snap={snap} neighborhoods={neighborhoods} onPickMonth={i => { const L = e - s; setRange(Math.max(0, i - L), Math.max(i, L)); }} />
         <NeighborhoodRanking snap={snap} neighborhoods={neighborhoods} onSelect={nta => update({ selected: nta })} />
       </aside>
-      <TimeBar meta={meta} filters={filters} s={s} e={e} playing={playing} onRange={setRange} onTogglePlay={togglePlay} />
+      <TimeBar meta={meta} filters={filters} s={s} e={e} onRange={setRange} />
     </div>
   );
 }
