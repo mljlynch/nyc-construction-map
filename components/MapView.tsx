@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type maplibregl from 'maplibre-gl';
 import type { ExpressionSpecification, GeoJSONSource, Map as MlMap } from 'maplibre-gl';
 import type { FilterContext, Filters } from '@/lib/filters';
 import { capitalize, fmt, monthLabel, rangeText, whatText } from '@/lib/format';
@@ -26,12 +27,27 @@ const classOf = (v: number, breaks: number[]) => (v <= 0 ? 0 : 1 + breaks.filter
 export const projectedIn = (meta: Meta, f: Filters) => f.stage === 'completed' && f.to >= meta.projectedFrom;
 export const pastData = (meta: Meta, f: Filters) => f.stage === 'permitted' && f.to > meta.dataEnd;
 
+// On phones the legend starts collapsed (it would cover half the map); tapping the title toggles it.
 function Legend({ meta, snap, zoom }: { meta: Meta; snap: Snapshot; zoom: number }) {
+  const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && matchMedia('(max-width: 820px)').matches);
   const f = snap.filters;
   const lows = [1, ...snap.choropleth.breaks];
+  if (collapsed) {
+    return (
+      <button className="legend legend-mini" onClick={() => setCollapsed(false)} aria-label="Show legend">
+        <span className="title">{capitalize(whatText(f))}</span>
+        <span className="mini-scale">
+          {SWATCHES.map(v => <span key={v} style={{ background: `var(${v})` }} />)}
+        </span>
+        <span className="mini-ends"><span>1</span><span>{fmt(lows[lows.length - 1])}+</span></span>
+      </button>
+    );
+  }
   return (
     <div className="legend">
-      <div className="title">{capitalize(whatText(f))}, {rangeText(f)}</div>
+      <button className="title legend-toggle" onClick={() => setCollapsed(true)} aria-label="Collapse legend">
+        {capitalize(whatText(f))}, {rangeText(f)} <span className="legend-x">▾</span>
+      </button>
       <div className="lrows">
         {SWATCHES.map((v, i) => {
           const lo = lows[i], hi = lows[i + 1] - 1;
@@ -112,8 +128,9 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
 
     const N = meta.months.length;
     const when = (i: number | null) => (i === null ? null : i < 0 ? 'before 2010' : i < N ? monthLabel(meta.months[i]) : `after ${monthLabel(meta.months[N - 1])}`);
-    // One handler so a project under the cursor wins over the neighborhood beneath it.
-    map.on('mousemove', e => {
+    // One handler so a project under the cursor wins over the neighborhood beneath it. It also runs
+    // on click, because phones have no hover: a tap shows the same details.
+    const showDetails = (e: maplibregl.MapMouseEvent) => {
       const hit = map.queryRenderedFeatures(e.point, { layers: ['proj', 'nta-fill'] });
       const pr = hit.find(f => f.layer.id === 'proj'), n = hit.find(f => f.layer.id === 'nta-fill');
       map.getCanvas().style.cursor = pr || n ? 'pointer' : '';
@@ -144,7 +161,10 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
           </>
         ) });
       } else setTip(null);
-    });
+    };
+    map.on('mousemove', showDetails);
+    map.on('click', showDetails);
+    map.on('movestart', () => setTip(null));
     map.on('mouseout', () => setTip(null));
     map.on('click', 'nta-fill', e => {
       const nta = e.features?.[0]?.properties?.nta;

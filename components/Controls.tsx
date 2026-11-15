@@ -83,31 +83,46 @@ export function Controls({ filters, boroughs, neighborhoods, shareUrl, onChange,
   onChange: (patch: Partial<Filters>) => void;
   onBorough: (b: string | null) => void;
 }) {
+  // On phones the controls collapse behind a Filters button (CSS shows them inline on wider screens).
+  const [open, setOpen] = useState(false);
+  const pickedCount = filters.neighborhoods.length;
+  const summary = [
+    { units: 'Units', affordable: 'Affordable', buildings: 'Buildings' }[filters.measure],
+    filters.stage === 'completed' ? 'Completed' : 'Permitted',
+    filters.type === 'all' ? '+ alterations' : null,
+    pickedCount ? `${pickedCount} neighborhood${pickedCount > 1 ? 's' : ''}` : filters.borough,
+  ].filter(Boolean).join(' · ');
   return (
     <header>
       <h1>NYC Housing Map</h1>
-      <Segmented<Measure> label="Measure" value={filters.measure} options={[['units', 'Units'], ['affordable', 'Affordable units', 'Income-restricted units HPD tracks (from 2014)'], ['buildings', 'Buildings']]} onChange={measure => onChange({ measure })} />
-      <Segmented<Stage> label="Stage" value={filters.stage} options={[['completed', 'Completed'], ['permitted', 'Permitted']]} onChange={stage => onChange({ stage })} />
-      <Segmented<BuildType>
-        label="Project type"
-        value={filters.type}
-        options={[
-          ['new', 'New buildings', 'Only newly constructed buildings'],
-          ['all', 'Include alterations', 'Also count renovations that add homes: conversions, added units and enlargements'],
-        ]}
-        onChange={type => onChange({ type })}
-      />
+      <button className="filters-btn" aria-expanded={open} aria-controls="controls" onClick={() => setOpen(!open)}>
+        <span className="filters-label">Filters</span> <span className="filters-summary">{summary}</span> {open ? '▴' : '▾'}
+      </button>
+      <div id="controls" className={`controls${open ? ' open' : ''}`}>
+        <Segmented<Measure> label="Measure" value={filters.measure} options={[['units', 'Units'], ['affordable', 'Affordable units', 'Income-restricted units HPD tracks (from 2014)'], ['buildings', 'Buildings']]} onChange={measure => onChange({ measure })} />
+        <Segmented<Stage> label="Stage" value={filters.stage} options={[['completed', 'Completed'], ['permitted', 'Permitted']]} onChange={stage => onChange({ stage })} />
+        <Segmented<BuildType>
+          label="Project type"
+          value={filters.type}
+          options={[
+            ['new', 'New buildings', 'Only newly constructed buildings'],
+            ['all', 'Include alterations', 'Also count renovations that add homes: conversions, added units and enlargements'],
+          ]}
+          onChange={type => onChange({ type })}
+        />
+        <label>
+          Borough{' '}
+          <select value={filters.borough ?? ''} onChange={e => onBorough(e.target.value || null)}>
+            <option value="">All boroughs</option>
+            {boroughs.map(b => <option key={b}>{b}</option>)}
+          </select>
+        </label>
+        {/* The side panel follows the dropdown selection, so picking neighborhoods clears a map click. */}
+        <NeighborhoodPicker neighborhoods={neighborhoods} borough={filters.borough} selected={filters.neighborhoods} onChange={ntas => onChange({ neighborhoods: ntas, selected: null })} />
+        <button className="share filters-done" onClick={() => setOpen(false)}>Done</button>
+      </div>
       <CopyLink shareUrl={shareUrl} />
       <Link className="share about-link" href="/about">About</Link>
-      <label>
-        Borough{' '}
-        <select value={filters.borough ?? ''} onChange={e => onBorough(e.target.value || null)}>
-          <option value="">All boroughs</option>
-          {boroughs.map(b => <option key={b}>{b}</option>)}
-        </select>
-      </label>
-      {/* The side panel follows the dropdown selection, so picking neighborhoods clears a map click. */}
-      <NeighborhoodPicker neighborhoods={neighborhoods} borough={filters.borough} selected={filters.neighborhoods} onChange={ntas => onChange({ neighborhoods: ntas, selected: null })} />
     </header>
   );
 }
