@@ -15,6 +15,7 @@ export interface Filters {
   borough: string | null;
   neighborhoods: string[]; // 2020 NTA codes
   selected: string | null; // NTA clicked on the map
+  historic: boolean; // show the historic protections overlay (display only; not sent to the API)
 }
 
 // What a filter value is checked against. Built from the data on the server and from the page's
@@ -30,7 +31,7 @@ export interface FilterContext {
 export const STAGES: Stage[] = ['completed', 'permitted'];
 
 export function defaultFilters(ctx: FilterContext): Filters {
-  return { measure: 'units', stage: 'completed', type: 'new', from: ctx.defaultFrom, to: ctx.defaultTo, borough: null, neighborhoods: [], selected: null };
+  return { measure: 'units', stage: 'completed', type: 'new', from: ctx.defaultFrom, to: ctx.defaultTo, borough: null, neighborhoods: [], selected: null, historic: false };
 }
 
 type ParamSource = URLSearchParams | Record<string, string | string[] | undefined>;
@@ -70,6 +71,7 @@ export function parseFilters(src: ParamSource, ctx: FilterContext): Filters {
   f.neighborhoods = [...new Set(ntas)];
   const selected = get('selected');
   if (selected && ctx.ntaBoro[selected]) f.selected = selected;
+  if (get('overlay') === 'historic') f.historic = true;
   return f;
 }
 
@@ -85,6 +87,7 @@ export function toSearchParams(f: Filters, ctx: FilterContext, full = false): UR
   if (f.borough) q.set('borough', f.borough);
   if (f.neighborhoods.length) q.set('neighborhoods', [...f.neighborhoods].sort().join(','));
   if (f.selected) q.set('selected', f.selected);
+  if (!full && f.historic) q.set('overlay', 'historic');
   return q;
 }
 

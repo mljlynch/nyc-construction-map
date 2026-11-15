@@ -91,6 +91,7 @@ export function Controls({ filters, boroughs, neighborhoods, shareUrl, onChange,
     filters.stage === 'completed' ? 'Completed' : 'Permitted',
     filters.type === 'all' ? '+ alterations' : null,
     pickedCount ? `${pickedCount} neighborhood${pickedCount > 1 ? 's' : ''}` : filters.borough,
+    filters.historic ? 'historic overlay' : null,
   ].filter(Boolean).join(' · ');
   return (
     <header>
@@ -119,6 +120,9 @@ export function Controls({ filters, boroughs, neighborhoods, shareUrl, onChange,
         </label>
         {/* The side panel follows the dropdown selection, so picking neighborhoods clears a map click. */}
         <NeighborhoodPicker neighborhoods={neighborhoods} borough={filters.borough} selected={filters.neighborhoods} onChange={ntas => onChange({ neighborhoods: ntas, selected: null })} />
+        <button className="overlay-btn" aria-pressed={filters.historic} title="Historic districts and individual landmarks protected by the Landmarks Preservation Commission" onClick={() => onChange({ historic: !filters.historic })}>
+          <span className="overlay-sw" /> Historic protections
+        </button>
         <button className="share filters-done" onClick={() => setOpen(false)}>Done</button>
       </div>
       <CopyLink shareUrl={shareUrl} />

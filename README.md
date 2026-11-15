@@ -40,6 +40,8 @@ A Next.js (App Router) app on Vercel.
 | DOB NOW: Build – Job Application Filings | `w9ak-ipjd` | NB jobs permitted after the HDB vintage: `first_permit_date`, proposed − existing units, lat/lon |
 | DOB NOW: Build – Approved Permits | `rbx6-tga4` | Earliest `issued_date` per job (Initial Permit) |
 | 2020 NTAs | `9nt8-h7nd` | Geometry; DOB NOW points are joined spatially (its `nta` field mixes 2010/2020 names) |
+| LPC Historic Districts | `skyk-mpzq` | Historic protections overlay (designated, current districts; reprojected from State Plane) |
+| LPC Individual Landmark Sites | `buis-pvji` | Same overlay (designated landmark lots) |
 
 ## Project markers
 

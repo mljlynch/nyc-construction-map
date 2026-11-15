@@ -28,7 +28,7 @@ export const projectedIn = (meta: Meta, f: Filters) => f.stage === 'completed' &
 export const pastData = (meta: Meta, f: Filters) => f.stage === 'permitted' && f.to > meta.dataEnd;
 
 // On phones the legend starts collapsed (it would cover half the map); tapping the title toggles it.
-function Legend({ meta, snap, zoom }: { meta: Meta; snap: Snapshot; zoom: number }) {
+function Legend({ meta, snap, zoom, historic }: { meta: Meta; snap: Snapshot; zoom: number; historic: boolean }) {
   const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && matchMedia('(max-width: 820px)').matches);
   const f = snap.filters;
   const lows = [1, ...snap.choropleth.breaks];
@@ -55,6 +55,10 @@ function Legend({ meta, snap, zoom }: { meta: Meta; snap: Snapshot; zoom: number
           return <div className="lrow" key={v}><span className="lsw" style={{ background: `var(${v})` }} />{range}</div>;
         }).reverse()}
         <div className="lrow"><span className="lsw zero" />None</div>
+        {historic && <>
+          <div className="lrow"><span className="lsw hist-district" />Historic district</div>
+          <div className="lrow"><span className="lsw hist-landmark" />Individual landmark</div>
+        </>}
       </div>
       {projectedIn(meta, f) && <div className="lnote">Includes estimated completions{f.stage === 'completed' ? '; faded markers are estimates' : ''}</div>}
       <div className="sizes">
@@ -131,7 +135,9 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
     // One handler so a project under the cursor wins over the neighborhood beneath it. It also runs
     // on click, because phones have no hover: a tap shows the same details.
     const showDetails = (e: maplibregl.MapMouseEvent) => {
-      const hit = map.queryRenderedFeatures(e.point, { layers: ['proj', 'nta-fill'] });
+      const layers = ['proj', 'nta-fill', ...(map.getLayer('hist-fill') && map.getLayoutProperty('hist-fill', 'visibility') !== 'none' ? ['hist-fill', 'hist-lm'] : [])];
+      const hit = map.queryRenderedFeatures(e.point, { layers });
+      const hist = hit.filter(f => f.layer.id === 'hist-fill' || f.layer.id === 'hist-lm').map(f => f.properties as { kind: string; name: string; year?: number });
       const pr = hit.find(f => f.layer.id === 'proj'), n = hit.find(f => f.layer.id === 'nta-fill');
       map.getCanvas().style.cursor = pr || n ? 'pointer' : '';
       const { x, y } = e.originalEvent;
@@ -158,6 +164,11 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
             <div style={{ fontWeight: 600 }}>{p.name}</div>
             <span className="muted">{p.boro}</span>
             <br /><b>{fmt(snapNow.choropleth.values[p.nta] ?? 0)}</b> {whatText(snapNow.filters)}
+            {hist.map((h, i) => (
+              <div key={i} className="tip-hist">
+                {h.kind === 'landmark' ? 'Landmark: ' : ''}{h.name}{h.year ? ` (${h.year})` : ''}
+              </div>
+            ))}
           </>
         ) });
       } else setTip(null);
@@ -202,6 +213,36 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
     map.triggerRepaint(); // guarantees an idle event even when nothing else changed
   }, [snap, geo, loaded, ctx]);
 
+  // Historic protections overlay: fetched the first time it's turned on, then just shown or hidden.
+  // It sits above the neighborhood colors and below the project markers.
+  const histRequested = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !map.getLayer('proj')) return;
+    const vis = filters.historic ? 'visible' : 'none';
+    if (map.getLayer('hist-fill')) {
+      for (const id of ['hist-fill', 'hist-line', 'hist-lm', 'hist-lm-line']) map.setLayoutProperty(id, 'visibility', vis);
+      return;
+    }
+    if (!filters.historic || histRequested.current) return;
+    histRequested.current = true;
+    fetch('/api/historic').then(r => r.json()).then((data: GeoJSON.FeatureCollection) => {
+      if (map.getSource('historic')) return;
+      const color = css('--historic');
+      const district: maplibregl.FilterSpecification = ['==', ['get', 'kind'], 'district'];
+      const landmark: maplibregl.FilterSpecification = ['==', ['get', 'kind'], 'landmark'];
+      map.addSource('historic', { type: 'geojson', data });
+      map.addLayer({ id: 'hist-fill', type: 'fill', source: 'historic', filter: district, paint: { 'fill-color': color, 'fill-opacity': 0.22 } }, 'proj');
+      map.addLayer({ id: 'hist-line', type: 'line', source: 'historic', filter: district, paint: { 'line-color': color, 'line-width': 1.5, 'line-dasharray': [2, 1] } }, 'proj');
+      map.addLayer({ id: 'hist-lm', type: 'fill', source: 'historic', filter: landmark, paint: { 'fill-color': color, 'fill-opacity': 0.6 } }, 'proj');
+      map.addLayer({ id: 'hist-lm-line', type: 'line', source: 'historic', filter: landmark, paint: { 'line-color': color, 'line-width': 0.8 } }, 'proj');
+      // The toggle may have been switched off while the data loaded.
+      if (!latestHistoric.current) for (const id of ['hist-fill', 'hist-line', 'hist-lm', 'hist-lm-line']) map.setLayoutProperty(id, 'visibility', 'none');
+    }).catch(err => { console.error(err); histRequested.current = false; });
+  }, [filters.historic, loaded, geo]);
+  const latestHistoric = useRef(filters.historic);
+  latestHistoric.current = filters.historic;
+
   // Zoom to the borough/neighborhood selection when it changes (and to a shared link's selection on
   // load). Clearing it zooms back out to the whole city.
   const lastFit = useRef<string | null>(null);
@@ -229,7 +270,7 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
   return (
     <div className={`map${ready ? ' ready' : ''}`}>
       <div ref={container} className="map-canvas" />
-      {snap && <Legend meta={meta} snap={snap} zoom={zoom} />}
+      {snap && <Legend meta={meta} snap={snap} zoom={zoom} historic={filters.historic} />}
       {error && <div className="map-error"><p>Couldn&apos;t load the map data. Please refresh to try again.</p></div>}
       {tip && <div className="tip" style={{ left: Math.min(tip.x + 12, window.innerWidth - 300), top: tip.y + 12 }}>{tip.body}</div>}
     </div>

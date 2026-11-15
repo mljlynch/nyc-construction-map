@@ -15,6 +15,8 @@ const SOURCES = [
   { name: 'DOB NOW: Build – Job Application Filings', org: 'NYC Department of Buildings', id: 'w9ak-ipjd', use: 'new-building permits issued after the Housing Database’s latest release' },
   { name: 'DOB NOW: Build – Approved Permits', org: 'NYC Department of Buildings', id: 'rbx6-tga4', use: 'the earliest permit date for those newer projects' },
   { name: '2020 Neighborhood Tabulation Areas', org: 'NYC Department of City Planning', id: '9nt8-h7nd', use: 'neighborhood boundaries' },
+  { name: 'Historic Districts', org: 'NYC Landmarks Preservation Commission', id: 'skyk-mpzq', use: 'designated historic districts for the historic protections overlay' },
+  { name: 'Individual Landmark Sites', org: 'NYC Landmarks Preservation Commission', id: 'buis-pvji', use: 'designated individual landmark lots for the same overlay' },
 ];
 
 export default async function About() {
@@ -91,6 +93,10 @@ export default async function About() {
       <ul>
         <li>The 2015 and 2022 spikes are filings rushed in before the 421-a tax break expired.</li>
         <li>Unit colors use fixed thresholds. Building counts use breaks based on the neighborhoods in view.</li>
+        <li>
+          <strong>Historic protections</strong> outlines the city&apos;s designated historic districts and individual landmark sites. New buildings and
+          most exterior changes there need approval from the Landmarks Preservation Commission. It&apos;s an overlay for context and doesn&apos;t change any counts.
+        </li>
         <li>Every view has its own link: change the filters and use Copy link to share exactly what you&apos;re looking at.</li>
       </ul>
 

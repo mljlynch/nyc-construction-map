@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["pandas>=2.1", "shapely>=2.0", "requests>=2.31"]
+# dependencies = ["pandas>=2.1", "shapely>=2.0", "requests>=2.31", "pyproj>=3.6"]
 # ///
 """Build static JSON for the NYC new-construction map.
 
@@ -23,7 +23,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import requests
+from pyproj import Transformer
 from shapely import STRtree, points
+from shapely.ops import transform as transform_geom
 from shapely.geometry import mapping, shape
 
 SODA = "https://data.cityofnewyork.us/resource"
@@ -31,6 +33,8 @@ HDB_ID = "br6q-ssj3"  # DCP Housing Database Project Level Files
 FILINGS_ID = "w9ak-ipjd"  # DOB NOW: Build - Job Application Filings
 PERMITS_ID = "rbx6-tga4"  # DOB NOW: Build - Approved Permits
 NTA_ID = "9nt8-h7nd"  # 2020 Neighborhood Tabulation Areas
+HISTORIC_DISTRICTS_ID = "skyk-mpzq"  # LPC Historic Districts
+LANDMARK_SITES_ID = "buis-pvji"  # LPC Individual Landmark Sites
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data"
@@ -361,6 +365,54 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
     return {"never": never, "boros": [BORO_FROM_NTA[k] for k in BORO_FROM_NTA], "rows": rows}
 
 
+def round_coords(geom: dict, digits: int = 5) -> dict:
+    """Round to ~1 m; full float precision roughly doubles the file for no visible difference."""
+    def r(c):
+        return [round(c[0], digits), round(c[1], digits)] if isinstance(c[0], (int, float)) else [r(x) for x in c]
+    return {"type": geom["type"], "coordinates": r(geom["coordinates"])}
+
+
+def load_historic() -> dict:
+    """Areas under Landmarks Preservation Commission protection: designated historic districts and
+    individual landmark sites. Building or altering anything in them needs LPC approval."""
+    feats = []
+    # LPC's GeoJSON is in New York State Plane (Long Island, US feet), not longitude/latitude.
+    to_lonlat = Transformer.from_crs("EPSG:2263", "EPSG:4326", always_xy=True).transform
+
+    def add(geom: dict, props: dict, tolerance: float) -> None:
+        g = shape(geom)
+        if g.is_empty:
+            return
+        if abs(g.bounds[0]) > 180:  # projected coordinates
+            g = transform_geom(to_lonlat, g)
+        geom = mapping(g.simplify(tolerance, preserve_topology=True))
+        feats.append({"type": "Feature", "properties": props, "geometry": round_coords(geom)})
+
+    r = requests.get(f"{SODA}/{HISTORIC_DISTRICTS_ID}.geojson", params={"$limit": 1000}, timeout=120)
+    r.raise_for_status()
+    for f in r.json()["features"]:
+        p = f["properties"]
+        if p.get("status_of_") != "DESIGNATED" or p.get("current_") != "Yes" or not f.get("geometry"):
+            continue
+        year = (p.get("desdate") or "")[:4]
+        add(f["geometry"], {"kind": "district", "name": p["area_name"], "year": int(year) if year.isdigit() else None}, 0.00004)
+
+    r = requests.get(f"{SODA}/{LANDMARK_SITES_ID}.geojson", params={"$limit": 5000}, timeout=120)
+    r.raise_for_status()
+    for f in r.json()["features"]:
+        p = f["properties"]
+        if p.get("lpc_sitest") != "Designated" or not f.get("geometry"):
+            continue
+        year = (p.get("desdate") or "")[:4]
+        add(f["geometry"], {"kind": "landmark", "name": (p.get("lpc_name") or "").strip(), "year": int(year) if year.isdigit() else None}, 0.00001)
+
+    # Districts first so landmark sites draw on top of them.
+    feats.sort(key=lambda f: f["properties"]["kind"] != "district")
+    counts = {k: sum(1 for f in feats if f["properties"]["kind"] == k) for k in ("district", "landmark")}
+    print(f"  historic protections: {counts}", file=sys.stderr)
+    return {"type": "FeatureCollection", "features": feats}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-dob-now", action="store_true", help="skip the DOB NOW freshness layer")
@@ -429,6 +481,8 @@ def main() -> None:
     }
 
     (OUT / "ntas.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}, separators=(",", ":")))
+    print("Loading historic districts and landmarks…", file=sys.stderr)
+    (OUT / "historic.geojson").write_text(json.dumps(load_historic(), separators=(",", ":")))
     (OUT / "projects.json").write_text(
         json.dumps(project_points(jobs, months, args.stale_years or None), separators=(",", ":"))
     )

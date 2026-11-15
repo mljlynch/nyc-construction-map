@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isNarrowed, queryString, toSearchParams, type FilterContext, type Filters } from '@/lib/filters';
 import type { ChoroplethResponse, Meta, NeighborhoodInfo, ProjectsResponse, SeriesResponse } from '@/lib/types';
 import { BoroughTotals } from './BoroughTotals';
@@ -47,9 +47,13 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
 
   // Fetch the filtered view. Each change aborts the previous request, so a slow response can't
   // overwrite a newer one.
+  const apiQuery = useMemo(() => queryString(toSearchParams(filters, ctx, true)), [filters, ctx]);
+  const latestFilters = useRef(filters);
+  latestFilters.current = filters;
   useEffect(() => {
     const ctrl = new AbortController();
-    const q = queryString(toSearchParams(filters, ctx, true));
+    const q = apiQuery;
+    const filters = latestFilters.current;
     const wantsSeries = !!(filters.selected || filters.neighborhoods.length);
     const timer = setTimeout(async () => {
       try {
@@ -65,7 +69,7 @@ export function HousingMap({ meta, ctx, neighborhoods, initialFilters }: { meta:
       }
     }, FETCH_DELAY);
     return () => { clearTimeout(timer); ctrl.abort(); };
-  }, [filters, ctx]);
+  }, [apiQuery]);
 
   // Keep the filters in the address bar (without adding history entries) so the view can be shared.
   const shareUrl = useMemo(() => queryString(toSearchParams(filters, ctx)), [filters, ctx]);

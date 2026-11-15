@@ -20,6 +20,7 @@ export interface DataStore {
   series(): Promise<RawSeries>;
   neighborhoods(): Promise<FeatureCollection>;
   projects(): Promise<RawProjects>;
+  historic(): Promise<FeatureCollection>;
 }
 
 /** Reads the JSON files the pipeline writes to data/ (shipped with each function; see next.config.ts). */
@@ -43,6 +44,7 @@ class JsonFileStore implements DataStore {
   series() { return this.load<RawSeries>('series.json'); }
   neighborhoods() { return this.load<FeatureCollection>('ntas.geojson'); }
   projects() { return this.load<RawProjects>('projects.json'); }
+  historic() { return this.load<FeatureCollection>('historic.geojson'); }
 }
 
 let store: DataStore | undefined;
