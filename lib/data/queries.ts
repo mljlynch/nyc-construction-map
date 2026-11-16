@@ -26,6 +26,7 @@ interface Index {
   neighborhoods: NeighborhoodInfo[];
   ntas: string[]; // every NTA with any data
   byType: Record<BuildType, Series>; // 'new' = new buildings; 'all' = plus alterations that add units
+  historicByType: Record<BuildType, Series>; // the same, only jobs inside LPC historic protections
   projects: { lon: number; lat: number; nta: string; boro: string; p: number; c: number; x: number; e: number; props: ProjectProps }[];
 }
 
@@ -42,10 +43,11 @@ async function buildIndex(): Promise<Index> {
   const N = meta.months.length;
 
   const byType: Index['byType'] = { new: buildSeries(series, ['n'], N), all: buildSeries(series, ['n', 'a'], N) };
+  const historicByType: Index['historicByType'] = { new: buildSeries(series, ['nh'], N), all: buildSeries(series, ['nh', 'ah'], N) };
 
   const neighborhoods: NeighborhoodInfo[] = geo.features
     .map(f => f.properties as unknown as NeighborhoodInfo)
-    .filter(p => series[p.nta])
+    .filter(p => series[p.nta]?.n || series[p.nta]?.a)
     .map(({ nta, name, boro }) => ({ nta, name, boro }))
     .sort((a, b) => a.boro.localeCompare(b.boro) || a.name.localeCompare(b.name));
   const ntaBoro = Object.fromEntries(neighborhoods.map(n => [n.nta, n.boro]));
@@ -58,10 +60,10 @@ async function buildIndex(): Promise<Index> {
   const orNull = (v: number) => (v === never ? null : v);
   const projects = raw.rows.map(([lon, lat, u, p, c, e, b, a, fl, ty, nta, x, xl, xh, aff]) => ({
     lon, lat, nta, boro: raw.boros[b], p, c, x, e,
-    props: { u, aff, ty, a, alt: fl.includes('a'), dob: fl.includes('d'), p, c: orNull(c), xl: orNull(xl), xh: orNull(xh), est: c === never } as ProjectProps,
+    props: { u, aff, ty, a, alt: fl.includes('a'), dob: fl.includes('d'), h: fl.includes('h'), p, c: orNull(c), xl: orNull(xl), xh: orNull(xh), est: c === never } as ProjectProps,
   }));
 
-  return { meta, ctx, neighborhoods, ntas: Object.keys(series), byType, projects };
+  return { meta, ctx, neighborhoods, ntas: Object.keys(series), byType, historicByType, projects };
 }
 
 // Sums the given job kinds into monthly arrays per NTA, plus prefix sums.
@@ -97,9 +99,11 @@ function view(ix: Index, f: Filters) {
   const key = ((f.stage === 'completed' ? 't' : f.stage[0]) + MEASURE_KEY[f.measure]) as Key;
   const { cur, cum } = ix.byType[f.type];
   const valRange = (nta: string, a: number, b: number) => (cum[nta] ? cum[nta][key][b + 1] - cum[nta][key][a] : 0);
+  const hcum = ix.historicByType[f.type].cum;
+  const histVal = (nta: string) => (hcum[nta] ? hcum[nta][key][e + 1] - hcum[nta][key][s] : 0);
   const picked = new Set(f.neighborhoods);
   const inView = (nta: string) => (!f.borough || ix.ctx.ntaBoro[nta] === f.borough) && (!picked.size || picked.has(nta));
-  return { s, e, key, cur, valRange, val: (nta: string) => valRange(nta, s, e), picked, inView };
+  return { s, e, key, cur, valRange, val: (nta: string) => valRange(nta, s, e), histVal, picked, inView };
 }
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -112,14 +116,19 @@ export async function choropleth(f: Filters): Promise<ChoroplethResponse> {
 
   // A borough filter only dims the other boroughs; a neighborhood selection restricts the totals.
   const totals: Record<string, number> = Object.fromEntries(ix.meta.boros.map(b => [b, 0]));
+  const historicTotals: Record<string, number> = { ...totals };
   for (const nta of ix.ntas) {
     const b = ix.ctx.ntaBoro[nta];
-    if (b in totals && (!v.picked.size || v.picked.has(nta))) totals[b] += v.val(nta);
+    if (b in totals && (!v.picked.size || v.picked.has(nta))) { totals[b] += v.val(nta); historicTotals[b] += v.histVal(nta); }
   }
-  const total = Object.values(totals).reduce((a, b) => a + b, 0);
-  for (const b in totals) totals[b] = round1(totals[b]);
+  const sum = (r: Record<string, number>) => round1(Object.values(r).reduce((a, b) => a + b, 0));
+  const total = sum(totals), historicTotal = sum(historicTotals);
+  for (const b in totals) { totals[b] = round1(totals[b]); historicTotals[b] = round1(historicTotals[b]); }
 
-  return { values, breaks: f.measure === 'buildings' ? buildingBreaks(ix, v) : UNIT_BREAKS, totals, total: round1(total) };
+  return {
+    values, breaks: f.measure === 'buildings' ? buildingBreaks(ix, v) : UNIT_BREAKS, totals, total,
+    historic: { totals: historicTotals, total: historicTotal },
+  };
 }
 
 // Quantiles of the current view's nonzero neighborhood values.

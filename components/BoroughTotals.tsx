@@ -8,7 +8,10 @@ import { pastData, projectedIn } from './MapView';
 export function BoroughTotals({ meta, snap, onBorough }: { meta: Meta; snap: Snapshot | null; onBorough: (b: string) => void }) {
   if (!snap) return <h2>Borough totals</h2>;
   const f = snap.filters;
-  const { totals, total } = snap.choropleth;
+  const { totals, total, historic } = snap.choropleth;
+  // Follows the borough filter, since the borough rows above only dim.
+  const hist = f.borough ? historic.totals[f.borough] ?? 0 : historic.total;
+  const histOf = f.borough ? totals[f.borough] ?? 0 : total;
   const max = Math.max(1, ...Object.values(totals));
   const n = f.neighborhoods.length;
   const scope = n ? ` · ${n} selected neighborhood${n > 1 ? 's' : ''}` : '';
@@ -27,6 +30,10 @@ export function BoroughTotals({ meta, snap, onBorough }: { meta: Meta; snap: Sna
         </div>
       ))}
       <div className="total"><span>{n ? 'Selected total' : 'New York City'}</span><span>{fmt(total)}</span></div>
+      <div className="hist-total" title="Inside a historic district or on an individual landmark site designated by the Landmarks Preservation Commission">
+        <span><span className="overlay-sw" /> In historic protections{f.borough && !n ? ` · ${f.borough}` : ''}</span>
+        <span>{fmt(hist)}{histOf > 0 && <span className="muted"> · {Math.round((hist / histOf) * 1000) / 10}%</span>}</span>
+      </div>
     </>
   );
 }

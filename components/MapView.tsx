@@ -153,6 +153,7 @@ export function MapView({ meta, ctx, snap, error, fitKey, filters, onSelect }: {
               {meta.buildingTypes[p.ty]}
               <br />Permitted {when(p.p) ?? '—'}{p.c != null && ` · completed ${when(p.c)}`}
               {p.est && p.xl != null && <><br />Est. completion likely {when(p.xl)}{p.xh != null && p.xh > p.xl && ` – ${when(p.xh)}`}</>}
+              {p.h && <><br />Inside a historic protection</>}
               {p.dob && <><br />DOB NOW filing (provisional)</>}
             </span>
           </>

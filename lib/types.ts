@@ -27,6 +27,7 @@ export interface ChoroplethResponse {
   breaks: number[]; // lower bounds of color classes 2..7 (class 1 starts above zero)
   totals: Record<string, number>; // by borough
   total: number;
+  historic: { totals: Record<string, number>; total: number }; // the part inside LPC historic protections
 }
 
 export interface ProjectProps {
@@ -36,6 +37,7 @@ export interface ProjectProps {
   a: string; // address
   alt: boolean; // alteration rather than new building
   dob: boolean; // provisional DOB NOW filing
+  h: boolean; // inside an LPC historic district or on a landmark site
   p: number; // permit month index (may be negative for pre-2010)
   c: number | null; // completion month index
   xl: number | null; // likely completion range (estimate), month indices

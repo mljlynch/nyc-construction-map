@@ -342,7 +342,8 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
     Rows are [lon, lat, units, p, c, e, boro, address, flags, building type index, nta, x, x_lo, x_hi, affordable units]: p = permit month, c = completion
     month, e = month the job leaves "in progress" (completion or staleness), all as offsets from
     months[0], with NEVER meaning never. A job is in progress at t when p <= t < e, matching
-    `aggregate`. flags: "a" = alteration, "d" = from DOB NOW.
+    `aggregate`. flags: "a" = alteration, "d" = from DOB NOW, "h" = inside an LPC historic district
+    or on a landmark site.
     """
     never = 99999
     m0 = months[0]
@@ -358,7 +359,7 @@ def project_points(jobs: pd.DataFrame, months: pd.PeriodIndex, stale_years: int 
         x_hi = (r.est_hi - m0).n if pd.notna(r.est_hi) else never
         exit_ = c if c != never else x
         e = exit_ if p == never or stale_years is None else min(exit_, p + 12 * stale_years)
-        flags = ("a" if r.job_type == "Alteration" else "") + ("d" if r.source == "dobnow" else "")
+        flags = ("a" if r.job_type == "Alteration" else "") + ("d" if r.source == "dobnow" else "") + ("h" if r.historic else "")
         rows.append([round(r.lon, 5), round(r.lat, 5), int(r.units), p, c, e, boro_idx[r.nta2020[:2]], r.address.title(), flags, int(r.btype), r.nta2020, x, x_lo, x_hi, int(r.aff)])
     # Big projects last so they draw on top of the small ones around them.
     rows.sort(key=lambda row: row[2])
@@ -413,6 +414,16 @@ def load_historic() -> dict:
     return {"type": "FeatureCollection", "features": feats}
 
 
+def flag_historic(jobs: pd.DataFrame, historic: dict) -> pd.Series:
+    """True for jobs whose point falls in a historic district or on an individual landmark site."""
+    tree = STRtree([shape(f["geometry"]) for f in historic["features"]])
+    has = jobs.lat.notna() & jobs.lon.notna()
+    inside = np.zeros(len(jobs), dtype=bool)
+    hit_points, _ = tree.query(points(jobs.lon[has].to_numpy(), jobs.lat[has].to_numpy()), predicate="intersects")
+    inside[np.flatnonzero(has.to_numpy())[np.unique(hit_points)]] = True
+    return pd.Series(inside, index=jobs.index)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-dob-now", action="store_true", help="skip the DOB NOW freshness layer")
@@ -454,11 +465,16 @@ def main() -> None:
     # Expected completions taper off for years; stop the axis once most projected units are in.
     end = max(data_end, last_actual + HORIZON_MONTHS)
     months = pd.period_range(START_MONTH, end, freq="M")
-    # {nta: {"n": {...}, "a": {...}}}: one set of monthly arrays per kind.
+    print("Loading historic districts and landmarks…", file=sys.stderr)
+    historic = load_historic()
+    jobs["historic"] = flag_historic(jobs, historic)
+    # {nta: {"n": {...}, "a": {...}, "nh": {...}, "ah": {...}}}: one set of monthly arrays per kind,
+    # plus the same arrays for just the jobs inside historic protections ("h" suffix).
     series: dict[str, dict] = {}
     for kind in KINDS:
-        for nta, arrs in aggregate(jobs[jobs.kind == kind], months, args.stale_years or None, dist, last_actual).items():
-            series.setdefault(nta, {})[kind] = arrs
+        for key, sub in ((kind, jobs.kind == kind), (kind + "h", (jobs.kind == kind) & jobs.historic)):
+            for nta, arrs in aggregate(jobs[sub], months, args.stale_years or None, dist, last_actual).items():
+                series.setdefault(nta, {})[key] = arrs
 
     # Borough totals are summed client-side from NTA series, so jobs without an NTA would vanish.
     unplaced = jobs[jobs.nta2020.isna()]
@@ -481,14 +497,15 @@ def main() -> None:
     }
 
     (OUT / "ntas.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}, separators=(",", ":")))
-    print("Loading historic districts and landmarks…", file=sys.stderr)
-    (OUT / "historic.geojson").write_text(json.dumps(load_historic(), separators=(",", ":")))
+    (OUT / "historic.geojson").write_text(json.dumps(historic, separators=(",", ":")))
     (OUT / "projects.json").write_text(
         json.dumps(project_points(jobs, months, args.stale_years or None), separators=(",", ":"))
     )
     (OUT / "series.json").write_text(json.dumps(series, separators=(",", ":")))
     (OUT / "meta.json").write_text(json.dumps(meta, indent=2))
     tot = {kind: {k: sum(sum(v.get(kind, {}).get(k, [])) for v in series.values()) for k in ("pu", "cu", "pa", "ca")} for kind in KINDS}
+    hist = jobs[jobs.historic]
+    print(f"  inside historic protections: {len(hist)} jobs, {int(hist.units.sum())} units", file=sys.stderr)
     print(f"Wrote {len(series)} NTAs x {len(months)} months. Totals: {tot}. Unplaced jobs: {len(unplaced)}", file=sys.stderr)
 
 

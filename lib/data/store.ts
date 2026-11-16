@@ -4,7 +4,8 @@ import type { Meta } from '../types';
 
 // Raw shapes of the pipeline's output (pipeline/build_data.py documents each field).
 export type SeriesKey = `${'p' | 'c' | 'x' | 'i'}${'j' | 'u' | 'a'}`; // stage + measure (jobs, units, affordable units)
-export type Kind = 'n' | 'a'; // new building, alteration that adds units
+// New building, alteration that adds units; an "h" suffix is the same jobs inside historic protections.
+export type Kind = 'n' | 'a' | 'nh' | 'ah';
 export type RawSeries = Record<string, Partial<Record<Kind, Partial<Record<SeriesKey, number[]>>>>>;
 export type FeatureCollection = { type: 'FeatureCollection'; features: { type: 'Feature'; properties: Record<string, unknown>; geometry: unknown }[] };
 // [lon, lat, units, p, c, e, boro, address, flags, type, nta, x, x_lo, x_hi, affordable units]
