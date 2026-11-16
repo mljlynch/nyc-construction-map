@@ -95,7 +95,7 @@ export default async function About() {
         <li>Unit colors use fixed thresholds. Building counts use breaks based on the neighborhoods in view.</li>
         <li>
           <strong>Historic protections</strong> outlines the city&apos;s designated historic districts and individual landmark sites. New buildings and
-          most exterior changes there need approval from the Landmarks Preservation Commission. The overlay doesn&apos;t change any counts, but the borough totals show how many of them are inside these areas (a project counts when its location falls in a district or on a landmark lot), whether or not the overlay is on.
+          most exterior changes there need approval from the Landmarks Preservation Commission. The overlay doesn&apos;t change any counts, but the borough totals show how many of them are inside these areas (a project counts when its location falls in a district or on a landmark lot), whether or not the overlay is on, next to the share of land these areas cover (land area within neighborhood boundaries, parks and airports included) for comparison.
         </li>
         <li>Every view has its own link: change the filters and use Copy link to share exactly what you&apos;re looking at.</li>
       </ul>

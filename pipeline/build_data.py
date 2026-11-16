@@ -27,6 +27,7 @@ from pyproj import Transformer
 from shapely import STRtree, points
 from shapely.ops import transform as transform_geom
 from shapely.geometry import mapping, shape
+from shapely.ops import unary_union
 
 SODA = "https://data.cityofnewyork.us/resource"
 HDB_ID = "br6q-ssj3"  # DCP Housing Database Project Level Files
@@ -424,6 +425,23 @@ def flag_historic(jobs: pd.DataFrame, historic: dict) -> pd.Series:
     return pd.Series(inside, index=jobs.index)
 
 
+def add_land_areas(feats: list[dict], ntree: STRtree, historic: dict) -> None:
+    """Set each NTA's land area and the part of it under historic protection, in acres.
+
+    NTA boundaries follow the shoreline, so this is land area (parks and airports included).
+    Districts and landmark lots overlap, so they're merged before measuring."""
+    to_feet = Transformer.from_crs("EPSG:4326", "EPSG:2263", always_xy=True).transform
+    protected = unary_union([transform_geom(to_feet, shape(f["geometry"])).buffer(0) for f in historic["features"]])
+    sq_ft_per_acre = 43560
+    for f, g in zip(feats, ntree.geometries):
+        g = transform_geom(to_feet, g).buffer(0)
+        f["properties"]["acres"] = round(g.area / sq_ft_per_acre, 1)
+        f["properties"]["hist_acres"] = round(g.intersection(protected).area / sq_ft_per_acre, 1)
+    total = sum(f["properties"]["acres"] for f in feats)
+    hist = sum(f["properties"]["hist_acres"] for f in feats)
+    print(f"  land under historic protection: {hist:,.0f} of {total:,.0f} acres ({hist / total:.1%})", file=sys.stderr)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-dob-now", action="store_true", help="skip the DOB NOW freshness layer")
@@ -468,6 +486,7 @@ def main() -> None:
     print("Loading historic districts and landmarks…", file=sys.stderr)
     historic = load_historic()
     jobs["historic"] = flag_historic(jobs, historic)
+    add_land_areas(feats, ntree, historic)
     # {nta: {"n": {...}, "a": {...}, "nh": {...}, "ah": {...}}}: one set of monthly arrays per kind,
     # plus the same arrays for just the jobs inside historic protections ("h" suffix).
     series: dict[str, dict] = {}

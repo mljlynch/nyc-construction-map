@@ -12,6 +12,7 @@ export function BoroughTotals({ meta, snap, onBorough }: { meta: Meta; snap: Sna
   // Follows the borough filter, since the borough rows above only dim.
   const hist = f.borough ? historic.totals[f.borough] ?? 0 : historic.total;
   const histOf = f.borough ? totals[f.borough] ?? 0 : total;
+  const land = f.borough ? historic.landShares[f.borough] ?? 0 : historic.landShare;
   const max = Math.max(1, ...Object.values(totals));
   const n = f.neighborhoods.length;
   const scope = n ? ` · ${n} selected neighborhood${n > 1 ? 's' : ''}` : '';
@@ -33,6 +34,9 @@ export function BoroughTotals({ meta, snap, onBorough }: { meta: Meta; snap: Sna
       <div className="hist-total" title="Inside a historic district or on an individual landmark site designated by the Landmarks Preservation Commission">
         <span><span className="overlay-sw" /> In historic protections{f.borough && !n ? ` · ${f.borough}` : ''}</span>
         <span>{fmt(hist)}{histOf > 0 && <span className="muted"> · {Math.round((hist / histOf) * 1000) / 10}%</span>}</span>
+      </div>
+      <div className="hist-total hist-land muted" title="Share of land area inside historic districts or on landmark lots, parks and airports included">
+        <span>Land in historic protections</span><span>{land}%</span>
       </div>
     </>
   );

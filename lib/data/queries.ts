@@ -27,6 +27,8 @@ interface Index {
   ntas: string[]; // every NTA with any data
   byType: Record<BuildType, Series>; // 'new' = new buildings; 'all' = plus alterations that add units
   historicByType: Record<BuildType, Series>; // the same, only jobs inside LPC historic protections
+  acres: Record<string, [number, number]>;
+  acresBoro: Record<string, string>; // ntaBoro only covers NTAs with data; this covers parks too // every NTA, parks included: [land, under historic protection]
   projects: { lon: number; lat: number; nta: string; boro: string; p: number; c: number; x: number; e: number; props: ProjectProps }[];
 }
 
@@ -51,6 +53,12 @@ async function buildIndex(): Promise<Index> {
     .map(({ nta, name, boro }) => ({ nta, name, boro }))
     .sort((a, b) => a.boro.localeCompare(b.boro) || a.name.localeCompare(b.name));
   const ntaBoro = Object.fromEntries(neighborhoods.map(n => [n.nta, n.boro]));
+  const acres: Index['acres'] = {};
+  const acresBoro: Record<string, string> = {};
+  for (const { properties: p } of geo.features) {
+    acres[p.nta as string] = [p.acres as number, p.hist_acres as number];
+    acresBoro[p.nta as string] = p.boro as string;
+  }
 
   // Open on the last 12 months of actual (not estimated) completions; completed is the default stage.
   const last = meta.months.indexOf(meta.projectedFrom) - 1;
@@ -63,7 +71,7 @@ async function buildIndex(): Promise<Index> {
     props: { u, aff, ty, a, alt: fl.includes('a'), dob: fl.includes('d'), h: fl.includes('h'), p, c: orNull(c), xl: orNull(xl), xh: orNull(xh), est: c === never } as ProjectProps,
   }));
 
-  return { meta, ctx, neighborhoods, ntas: Object.keys(series), byType, historicByType, projects };
+  return { meta, ctx, neighborhoods, ntas: Object.keys(series), byType, historicByType, acres, acresBoro, projects };
 }
 
 // Sums the given job kinds into monthly arrays per NTA, plus prefix sums.
@@ -127,8 +135,24 @@ export async function choropleth(f: Filters): Promise<ChoroplethResponse> {
 
   return {
     values, breaks: f.measure === 'buildings' ? buildingBreaks(ix, v) : UNIT_BREAKS, totals, total,
-    historic: { totals: historicTotals, total: historicTotal },
+    historic: { totals: historicTotals, total: historicTotal, ...landShares(ix, v.picked) },
   };
+}
+
+// Share of land under historic protection, by borough and for the whole view (the picked
+// neighborhoods if any, else the city). Doesn't depend on dates or measure.
+function landShares(ix: Index, picked: Set<string>) {
+  const land: Record<string, [number, number]> = Object.fromEntries(ix.meta.boros.map(b => [b, [0, 0]]));
+  const all: [number, number] = [0, 0];
+  for (const nta in ix.acres) {
+    if (picked.size && !picked.has(nta)) continue;
+    const [a, h] = ix.acres[nta];
+    const b = land[ix.acresBoro[nta]];
+    if (b) { b[0] += a; b[1] += h; }
+    all[0] += a; all[1] += h;
+  }
+  const share = ([a, h]: [number, number]) => (a ? Math.round((h / a) * 1000) / 10 : 0);
+  return { landShares: Object.fromEntries(Object.entries(land).map(([b, x]) => [b, share(x)])), landShare: share(all) };
 }
 
 // Quantiles of the current view's nonzero neighborhood values.
