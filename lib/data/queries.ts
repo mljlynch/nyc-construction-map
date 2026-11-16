@@ -106,7 +106,7 @@ function view(ix: Index, f: Filters) {
   const s = ix.ctx.months.indexOf(f.from), e = ix.ctx.months.indexOf(f.to);
   const key = ((f.stage === 'completed' ? 't' : f.stage[0]) + MEASURE_KEY[f.measure]) as Key;
   const { cur, cum } = ix.byType[f.type];
-  const valRange = (nta: string, a: number, b: number) => (cum[nta] ? cum[nta][key][b + 1] - cum[nta][key][a] : 0);
+  const valRange = (nta: string, a: number, b: number, k: Key = key) => (cum[nta] ? cum[nta][k][b + 1] - cum[nta][k][a] : 0);
   const hcum = ix.historicByType[f.type].cum;
   const histVal = (nta: string) => (hcum[nta] ? hcum[nta][key][e + 1] - hcum[nta][key][s] : 0);
   const picked = new Set(f.neighborhoods);
@@ -129,12 +129,23 @@ export async function choropleth(f: Filters): Promise<ChoroplethResponse> {
     const b = ix.ctx.ntaBoro[nta];
     if (b in totals && (!v.picked.size || v.picked.has(nta))) { totals[b] += v.val(nta); historicTotals[b] += v.histVal(nta); }
   }
+  // With the units measure, the affordable part of each borough's total (same stage, type and months).
+  let affordableTotals: Record<string, number> | null = null;
+  if (f.measure === 'units') {
+    const affKey = (v.key[0] + 'a') as Key;
+    affordableTotals = Object.fromEntries(ix.meta.boros.map(b => [b, 0]));
+    for (const nta of ix.ntas) {
+      const b = ix.ctx.ntaBoro[nta];
+      if (b in affordableTotals && (!v.picked.size || v.picked.has(nta))) affordableTotals[b] += v.valRange(nta, v.s, v.e, affKey);
+    }
+    for (const b in affordableTotals) affordableTotals[b] = round1(affordableTotals[b]);
+  }
   const sum = (r: Record<string, number>) => round1(Object.values(r).reduce((a, b) => a + b, 0));
   const total = sum(totals), historicTotal = sum(historicTotals);
   for (const b in totals) { totals[b] = round1(totals[b]); historicTotals[b] = round1(historicTotals[b]); }
 
   return {
-    values, breaks: f.measure === 'buildings' ? buildingBreaks(ix, v) : UNIT_BREAKS, totals, total,
+    values, breaks: f.measure === 'buildings' ? buildingBreaks(ix, v) : UNIT_BREAKS, totals, total, affordableTotals,
     historic: { totals: historicTotals, total: historicTotal, ...landShares(ix, v.picked) },
   };
 }

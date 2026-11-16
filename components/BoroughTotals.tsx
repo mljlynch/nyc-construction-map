@@ -8,7 +8,7 @@ import { pastData, projectedIn } from './MapView';
 export function BoroughTotals({ meta, snap, onBorough }: { meta: Meta; snap: Snapshot | null; onBorough: (b: string) => void }) {
   if (!snap) return <h2>Borough totals</h2>;
   const f = snap.filters;
-  const { totals, total, historic } = snap.choropleth;
+  const { totals, total, historic, affordableTotals: aff } = snap.choropleth;
   // Follows the borough filter, since the borough rows above only dim.
   const hist = f.borough ? historic.totals[f.borough] ?? 0 : historic.total;
   const histOf = f.borough ? totals[f.borough] ?? 0 : total;
@@ -23,11 +23,18 @@ export function BoroughTotals({ meta, snap, onBorough }: { meta: Meta; snap: Sna
       <h2>Borough totals · {rangeText(f)}</h2>
       <div className="muted" style={{ marginBottom: 6 }}>{whatText(f)}{scope}{caveat}</div>
       {/* A borough filter only dims the other rows; clicking a row toggles that borough. */}
+      {aff && <div className="aff-key muted"><span className="aff-sw" /> Affordable units, on the same scale</div>}
       {meta.boros.map(b => (
         <div key={b} className={`boro${f.borough && f.borough !== b ? ' dim' : ''}`} onClick={() => onBorough(b)}>
           <span>{b}</span>
-          <div className="bar" style={{ width: `${((totals[b] ?? 0) / max) * 100}%` }} />
-          <span className="v">{fmt(totals[b] ?? 0)}</span>
+          <div className="bars">
+            <div className="bar" style={{ width: `${((totals[b] ?? 0) / max) * 100}%` }} />
+            {aff && <div className="bar aff" style={{ width: `${((aff[b] ?? 0) / max) * 100}%` }} />}
+          </div>
+          <span className="v">
+            {fmt(totals[b] ?? 0)}
+            {aff && <span className="aff-v">{fmt(aff[b] ?? 0)} aff.</span>}
+          </span>
         </div>
       ))}
       <div className="total"><span>{n ? 'Selected total' : 'New York City'}</span><span>{fmt(total)}</span></div>

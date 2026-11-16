@@ -26,6 +26,7 @@ export interface ChoroplethResponse {
   values: Record<string, number>; // every NTA with data; the client dims ones outside the filter
   breaks: number[]; // lower bounds of color classes 2..7 (class 1 starts above zero)
   totals: Record<string, number>; // by borough
+  affordableTotals: Record<string, number> | null; // by borough, only with the units measure
   total: number;
   // The part inside LPC historic protections, and the percentage of land those protections cover.
   historic: { totals: Record<string, number>; total: number; landShares: Record<string, number>; landShare: number };
