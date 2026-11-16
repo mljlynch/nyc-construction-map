@@ -1,11 +1,34 @@
 'use client';
 
 import type { Filters } from '@/lib/filters';
-import { monthLabel, rangeText } from '@/lib/format';
+import { monthLabel } from '@/lib/format';
 import type { Meta } from '@/lib/types';
 import { pastData, projectedIn } from './MapView';
 
-// Two-handle month range slider.
+function MonthSelect({ meta, label, value, min, max, onChange }: { meta: Meta; label: string; value: number; min: number; max: number; onChange: (i: number) => void }) {
+  const years = new Map<string, number[]>();
+  meta.months.forEach((m, i) => {
+    const y = m.slice(0, 4);
+    if (!years.has(y)) years.set(y, []);
+    years.get(y)!.push(i);
+  });
+  return (
+    <select className="month-select" aria-label={label} value={value} onChange={ev => onChange(+ev.target.value)}>
+      {[...years].map(([y, idx]) => (
+        <optgroup key={y} label={y}>
+          {idx.map(i => (
+            <option key={i} value={i} disabled={i < min || i > max}>
+              {monthLabel(meta.months[i])}{meta.months[i] >= meta.projectedFrom ? ' (est.)' : ''}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
+// Start and end month pickers plus a two-handle range slider. The notes sit on their own line
+// under the pickers (always rendered) so showing or hiding one never resizes the slider.
 export function TimeBar({ meta, filters: f, s, e, onRange }: {
   meta: Meta;
   filters: Filters;
@@ -21,7 +44,18 @@ export function TimeBar({ meta, filters: f, s, e, onRange }: {
 
   return (
     <div className="timebar">
-      <span className="range-label">{rangeText(f)}{months > 1 ? ` · ${months} mo` : ''}</span>
+      <div className="range-pick">
+        <div className="range-selects">
+          <MonthSelect meta={meta} label="Start month" value={s} min={0} max={e} onChange={i => onRange(i, e)} />
+          <span aria-hidden>–</span>
+          <MonthSelect meta={meta} label="End month" value={e} min={s} max={N - 1} onChange={i => onRange(s, i)} />
+        </div>
+        <div className="range-notes">
+          <span>{months} month{months > 1 ? 's' : ''}</span>
+          {provisional && <span className="note">Provisional · DOB NOW</span>}
+          {est && <span className="note est">{est}</span>}
+        </div>
+      </div>
       <div className="range">
         <div className="track">
           <div className="fill" style={{ left: `${pct(s)}%`, width: `${pct(e) - pct(s)}%` }} />
@@ -35,8 +69,6 @@ export function TimeBar({ meta, filters: f, s, e, onRange }: {
           {meta.months.map((mo, i) => (mo.endsWith('-01') && +mo.slice(0, 4) % 2 === 0 ? <span key={mo} style={{ left: `${pct(i)}%` }}>{mo.slice(0, 4)}</span> : null))}
         </div>
       </div>
-      {provisional && <span className="badge">Provisional · DOB NOW</span>}
-      {est && <span className="badge est">{est}</span>}
     </div>
   );
 }
